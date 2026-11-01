@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>제주대 캠퍼스 재난 시뮬레이터</title>
-<meta name="description" content="제주대학교 아라캠퍼스 실제 건물 배치와 지형 위에서 9가지 재난을 일으키는 3D 웹 시뮬레이터">
+<title>제주대 재난 대피 시뮬레이터</title>
+<meta name="description" content="제주대학교 아라캠퍼스 실제 지도 위에서 재난별 위험 건물과 대피 경로, 대피 시간을 보여주는 3D 웹 시뮬레이터">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
@@ -34,15 +34,15 @@
         <button class="tb sw" id="tLabels" aria-pressed="true">이름표</button>
         <button class="tb sw" id="tSound" aria-pressed="true">소리</button>
       </div>
-      <div class="grp"><button class="tb" id="reset">캠퍼스 복구</button></div>
+      <div class="grp"><button class="tb" id="reset">초기화</button></div>
     </div>
     <div class="hint" id="hint"></div>
     <div class="credit">지도 데이터 © OpenStreetMap 기여자</div>
     <div class="loader" id="loader">
       <div class="box">
         <p class="eyebrow">Jeju National University · Ara Campus</p>
-        <h1>제주대 재난 시뮬레이터</h1>
-        <p>OpenStreetMap 건물 배치와 실제 지형 고도로 아라캠퍼스를 세우는 중입니다.</p>
+        <h1>제주대 재난 대피 시뮬레이터</h1>
+        <p>OpenStreetMap 건물·도로와 실제 지형 고도로 아라캠퍼스와 보행 경로망을 만드는 중입니다.</p>
         <div class="lb"><i id="loadBar"></i></div>
         <div class="msg" id="loadMsg">준비 중</div>
       </div>
@@ -50,10 +50,14 @@
   </div>
   <aside class="panel">
     <header>
-      <p class="eyebrow">제주대학교 아라캠퍼스 · 1:1 축척</p>
-      <h1>재난 시뮬레이터</h1>
+      <p class="eyebrow">제주대학교 아라캠퍼스 · 재난 대응 훈련</p>
+      <h1>재난 대피 시뮬레이터</h1>
       <div class="status"><span class="dot"></span><span id="clock">00:00</span><span id="activeList" data-on="0">평상시</span></div>
     </header>
+    <section>
+      <h2>시나리오 <span class="keys">· 누르면 바로 시작</span></h2>
+      <div class="presets" id="presets"></div>
+    </section>
     <section>
       <h2>재난 선택 <span class="keys">· 숫자키 1–6</span></h2>
       <div class="modes" id="modes"></div>
@@ -85,6 +89,10 @@
       <ul class="shelters" id="shelterList"></ul>
     </section>
     <section>
+      <h2>행동요령</h2>
+      <div class="guide" id="guide"><h3></h3><ol></ol><p class="src"></p></div>
+    </section>
+    <section>
       <h2>위험 평가 <span class="keys">· 캠퍼스 건물</span></h2>
       <div class="risk-counts" id="riskCounts">
         <div class="rc" data-l="0"><span class="n">0</span><span class="t">안전</span></div>
@@ -99,9 +107,16 @@
         <div><dt>파손·침수 차량</dt><dd id="sCars">0</dd></div>
       </dl>
     </section>
+    <section>
+      <h2>실행 기록 <span class="keys">· 대피소를 바꿔 가며 비교</span></h2>
+      <div class="tbl-wrap"><table class="results" id="results">
+        <thead><tr><th>#</th><th>재난</th><th>대피소</th><th>완료</th><th>평균</th><th>최대</th><th>고립</th><th>노출</th></tr></thead>
+        <tbody><tr class="empty"><td colspan="8">재난을 실행하면 결과가 여기에 쌓입니다.</td></tr></tbody>
+      </table></div>
+    </section>
     <section class="logsec">
       <h2>상황 기록</h2>
-      <ol id="log"><li class="empty">재난을 고르고 지도를 클릭하세요.</li></ol>
+      <ol id="log"><li class="empty">시나리오를 고르거나, 재난을 골라 지도를 클릭하세요.</li></ol>
     </section>
   </aside>
 </div>

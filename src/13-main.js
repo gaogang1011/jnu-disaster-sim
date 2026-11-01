@@ -5,7 +5,8 @@ const ui = {
   sFire: $('#sFire'), sTrees: $('#sTrees'), sCars: $('#sCars'), riskCounts: $('#riskCounts'), riskList: $('#riskList'),
   clock: $('#clock'), active: $('#activeList'),
   evKind: $('#evKind'), evPct: $('#evPct'), evBar: $('#evBar'), evMoving: $('#evMoving'), evDone: $('#evDone'), evStuck: $('#evStuck'),
-  evExposed: $('#evExposed'), evAvg: $('#evAvg'), evMax: $('#evMax'), evNote: $('#evNote'), shelterList: $('#shelterList')
+  evExposed: $('#evExposed'), evAvg: $('#evAvg'), evMax: $('#evMax'), evNote: $('#evNote'), shelterList: $('#shelterList'),
+  presets: $('#presets'), guide: $('#guide'), results: $('#results tbody')
 };
 
 const LOG = [];
@@ -42,6 +43,7 @@ function setMode(m) {
   EVAC.previewKind = DISASTERS[m].shelter;
   refreshModeInfo();
   renderShelterList();
+  renderGuide();
 }
 function refreshModeInfo() {
   const d = DISASTERS[S.mode], P = S.power;
@@ -92,7 +94,7 @@ function resetAll() {
   updateHeightTex();
   S.shake = 0; overlayFlash.v = 0;
   LOG.length = 0;
-  ui.log.innerHTML = '<li class="empty">캠퍼스를 복구했습니다. 재난을 골라 지도를 클릭하세요.</li>';
+  ui.log.innerHTML = '<li class="empty">캠퍼스를 초기화했습니다. 시나리오를 고르거나 재난을 골라 지도를 클릭하세요.</li>';
   updateStats(true);
 }
 
@@ -292,8 +294,9 @@ function updateEvacPanel() {
   ui.evAvg.textContent = fmtReal(m.avg);
   ui.evMax.textContent = fmtReal(m.max);
   const shaking = EVAC.kindId === 'quake' && quakeShaking();
-  ui.evNote.textContent = run.done ? `${run.done === true && EVAC.results.length ? EVAC.results[EVAC.results.length - 1].status : ''} · 경과 ${fmtReal(m.elapsed)} (실제 환산)` :
-    shaking ? '흔들리는 동안 제자리에서 몸을 보호하는 중' : `경과 ${fmtReal(m.elapsed)} (실제 환산) · 화면 1초 = 실제 ${EV_K}초`;
+  const last = EVAC.results[EVAC.results.length - 1];
+  ui.evNote.textContent = run.done && last ? `대피 ${last.status} · 재난 발생부터 ${fmtReal(last.elapsed)} (실제 시간 환산)` :
+    shaking ? '흔들리는 동안 제자리에서 몸을 보호하는 중입니다' : `재난 발생부터 ${fmtReal(m.elapsed)} 경과 (실제 시간 환산, 화면 1초 = ${EV_K}초)`;
   renderShelterCounts();
 }
 
@@ -325,7 +328,55 @@ ui.shelterList.addEventListener('change', e => {
   if (EVAC.active) { EVAC.routeT = 0; reroute(); }
   renderShelterCounts();
 });
-function onEvacChange() { renderShelterList(); updateStats(true); }
+function onEvacChange() { renderShelterList(); renderGuide(); renderResults(); updateStats(true); }
+
+function esc(t) { return String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function renderGuide() {
+  const id = EVAC.active && EVAC.kindId ? EVAC.kindId : S.mode;
+  const g = GUIDES[DISASTERS[id].guide];
+  ui.guide.querySelector('h3').textContent = g.title;
+  ui.guide.querySelector('ol').innerHTML = g.steps.map(t => `<li>${esc(t)}</li>`).join('');
+  ui.guide.querySelector('.src').innerHTML = '출처: ' + g.sources.map(k => `<a href="${GUIDE_SOURCES[k].url}" target="_blank" rel="noopener">${esc(GUIDE_SOURCES[k].name)}</a>`).join(', ');
+}
+function renderResults() {
+  const rows = EVAC.results;
+  if (!rows.length) return;
+  ui.results.innerHTML = rows.map((r, k) => `<tr title="${esc(r.info)} · ${esc(r.status)}"><td>${k + 1}</td><td>${esc(r.name)} ${r.power}</td><td>${r.shelters}곳</td>`
+    + `<td>${Math.round(r.pct)}%</td><td>${fmtShort(r.avg)}</td><td>${fmtShort(r.max)}</td><td class="${r.stuck ? 'bad' : ''}">${r.stuck}</td><td>${r.exposed}</td></tr>`).join('');
+}
+function fmtShort(sec) {
+  if (!(sec > 0)) return '-';
+  return `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
+}
+
+const PRESETS = [
+  { name: '수업 중 규모 6.5 지진', mode: 'quake', power: 7, tod: 'day', at: () => bldCenter('본관') },
+  { name: '야간 지진해일 경보', mode: 'tsunami', power: 8, tod: 'night' },
+  { name: '시간당 100mm 집중호우', mode: 'rain', power: 6, tod: 'dusk' },
+  { name: '초강력 태풍 상륙', mode: 'typhoon', power: 10, tod: 'day' },
+  { name: '권제오름 산불', mode: 'fire', power: 7, tod: 'day', at: () => DATA.P.gwonje },
+  { name: '한라산 분화', mode: 'volcano', power: 6, tod: 'dusk', at: () => bldCenter('학생회관') }
+];
+function bldCenter(n) { const b = BLD.find(q => q.name === n); return [b.cx, b.cz]; }
+function buildPresets() {
+  ui.presets.innerHTML = PRESETS.map((p, k) => `<button class="preset" data-k="${k}"><span class="n">${p.name}</span><span class="m">${DISASTERS[p.mode].info(p.power)}</span></button>`).join('');
+}
+ui.presets.addEventListener('click', e => {
+  const btn = e.target.closest('.preset');
+  if (!btn || !document.body.dataset.ready) return;
+  runPreset(PRESETS[+btn.dataset.k]);
+});
+function runPreset(p) {
+  sfx.init();
+  resetAll();
+  setTOD(p.tod);
+  document.querySelectorAll('[data-tod]').forEach(o => o.setAttribute('aria-pressed', String(o.dataset.tod === p.tod)));
+  S.power = p.power; ui.power.value = p.power;
+  setMode(p.mode);
+  const [x, z] = p.at ? p.at() : [0, 0];
+  DISASTERS[p.mode].run(x, z);
+  updateStats(true);
+}
 
 let perfAvg = 16, perfT = 0;
 function adaptBudget(rdt) {
@@ -386,7 +437,9 @@ function boot(i) {
     document.body.dataset.ready = '1';
     setTimeout(() => { ui.loader.hidden = true; }, 700);
     logEvent('시뮬레이션 준비 완료', 'ok');
+    buildPresets();
     renderShelterList();
+    renderGuide();
     updateStats(true);
     requestAnimationFrame(t => { last = t; frame(t); });
     return;
@@ -407,4 +460,4 @@ setMode('quake');
 resize();
 boot(0);
 if (TEST_MODE) window.__evacStep = updateEvacuation;
-if (TEST_MODE) window.__sim = { PROJ, VOLC, TYPH, LOG, SEGS, BLD, scene, camera, controls, renderer, FACADES, S, DISASTERS, T, CARS, EVAC, A, EV, evacMetrics, buildingInfo, setMode, H, TERR_U, FLOOD, setTOD, resetAll, camFly };
+if (TEST_MODE) window.__sim = { PRESETS, runPreset, finishRun, PROJ, VOLC, TYPH, LOG, SEGS, BLD, scene, camera, controls, renderer, FACADES, S, DISASTERS, T, CARS, EVAC, A, EV, evacMetrics, buildingInfo, setMode, H, TERR_U, FLOOD, setTOD, resetAll, camFly };
