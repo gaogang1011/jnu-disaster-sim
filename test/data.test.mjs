@@ -58,3 +58,39 @@ test('점-다각형 거리 계산', () => {
   assert.equal(distToPoly(5, 5, sq), 0);
   assert.equal(distToPoly(15, 5, sq), 5);
 });
+
+const g = vm.createContext({});
+vm.runInContext(load('00-data.js') + '\n' + load('00-guides.js') + '\n' + load('01-util.js') +
+  '\nglobalThis.out = { DATA, SHELTERS, GUIDES, GUIDE_SOURCES, typhoonClass, pointInPoly, distToPoly };', g);
+const G = g.out;
+
+test('옥외·고지대 대피소는 캠퍼스 안의 빈 땅에 있다', () => {
+  for (const s of G.SHELTERS.filter(q => !q.building)) {
+    assert.ok(G.pointInPoly(s.x, s.z, G.DATA.campus), `${s.name} 캠퍼스 밖`);
+    for (const [name, , poly] of G.DATA.B) assert.ok(G.distToPoly(s.x, s.z, poly) > 4, `${s.name}이 ${name} 안에 있음`);
+  }
+});
+
+test('실내 대피소는 실제 건물 이름과 연결된다', () => {
+  for (const s of G.SHELTERS.filter(q => q.building)) assert.ok(G.DATA.B.some(b => b[0] === s.building), `${s.building} 없음`);
+});
+
+test('대피 방식마다 대피소가 3곳 이상 있다', () => {
+  for (const k of ['open', 'high', 'indoor']) assert.ok(G.SHELTERS.filter(s => s.kinds.includes(k)).length >= 3, k);
+});
+
+test('행동요령은 재난 6종 모두 있고 출처가 연결된다', () => {
+  for (const k of ['quake', 'tsunami', 'rain', 'typhoon', 'fire', 'volcano']) {
+    const gd = G.GUIDES[k];
+    assert.ok(gd && gd.steps.length >= 3, k);
+    for (const s of gd.sources) assert.ok(G.GUIDE_SOURCES[s]?.url.startsWith('https://'), `${k} 출처 ${s}`);
+  }
+});
+
+test('태풍 강도는 기상청 기준으로 분류된다', () => {
+  assert.equal(G.typhoonClass(24.9), '약');
+  assert.equal(G.typhoonClass(25), '중');
+  assert.equal(G.typhoonClass(33), '강');
+  assert.equal(G.typhoonClass(44), '매우 강');
+  assert.equal(G.typhoonClass(54), '초강력');
+});
