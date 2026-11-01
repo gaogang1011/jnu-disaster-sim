@@ -104,6 +104,7 @@ function placeEvacuees() {
   for (const k of ['x', 'z', 'hx', 'hz', 'y', 'delay', 'tEnd', 'spd', 'tx', 'tz', 'sx', 'sz', 'bob']) A[k] = new Float32Array(n);
   for (const k of ['node', 'edge', 'shelter']) A[k] = new Int32Array(n).fill(-1);
   A.st = new Uint8Array(n); A.exposed = new Uint8Array(n); A.final = new Uint8Array(n); A.why = new Uint8Array(n);
+  A.everStuck = new Uint8Array(n); A.stuckSince = new Float32Array(n); A.stuckT = new Float32Array(n);
   A.col = [];
   const blds = BLD.filter(b => b.style !== 'house' && pointInPoly(b.cx, b.cz, DATA.campus));
   const total = blds.reduce((s, b) => s + b.area, 0);
@@ -286,15 +287,24 @@ function reroute() {
   paintRouteLines();
 }
 
+function setStuck(i, why) {
+  A.st[i] = EV.STUCK; A.why[i] = why;
+  A.everStuck[i] = 1; A.stuckSince[i] = S.time;
+}
+function clearStuck(i) {
+  if (A.st[i] === EV.STUCK) A.stuckT[i] += S.time - A.stuckSince[i];
+  A.why[i] = 0;
+}
+
 function enterGraph(i) {
   const v = entryNode(EVAC.graph, EVAC.route, A.x[i], A.z[i]);
   A.edge[i] = -1;
   if (v < 0) {
     A.node[i] = -1;
-    if (A.st[i] !== EV.STUCK) { A.st[i] = EV.STUCK; A.why[i] = 2; drawPerson(i, true); }
+    if (A.st[i] !== EV.STUCK) { setStuck(i, 2); drawPerson(i, true); }
     return;
   }
-  if (A.st[i] === EV.STUCK && A.why[i] === 2) { A.st[i] = EV.MOVE; drawPerson(i, true); }
+  if (A.st[i] === EV.STUCK && A.why[i] === 2) { clearStuck(i); A.st[i] = EV.MOVE; drawPerson(i, true); }
   A.node[i] = v;
   A.tx[i] = EVAC.graph.x[v]; A.tz[i] = EVAC.graph.z[v];
 }
@@ -338,6 +348,7 @@ function evacBegin(id) {
     A.st[i] = EV.WAIT;
     A.delay[i] = rand(0.5, 3.5);
     A.exposed[i] = 0; A.final[i] = 0; A.why[i] = 0; A.shelter[i] = -1; A.node[i] = -1; A.edge[i] = -1; A.tEnd[i] = 0;
+    A.everStuck[i] = 0; A.stuckT[i] = 0;
     drawPerson(i, true);
   }
   evMesh.instanceColor.needsUpdate = true;
@@ -360,7 +371,7 @@ function finishRun(status) {
 }
 
 function evacMetrics() {
-  let done = 0, moving = 0, stuck = 0, exposed = 0, wait = 0, sum = 0, max = 0;
+  let done = 0, moving = 0, stuck = 0, exposed = 0, wait = 0, sum = 0, max = 0, ever = 0, stuckSum = 0;
   const start = EVAC.run ? EVAC.run.start : S.time;
   for (let i = 0; i < EVAC.n; i++) {
     const st = A.st[i];
@@ -369,8 +380,12 @@ function evacMetrics() {
     else if (st === EV.STUCK) stuck++;
     else if (st === EV.WAIT) wait++;
     if (A.exposed[i]) exposed++;
+    if (A.everStuck[i]) { ever++; stuckSum += A.stuckT[i] + (st === EV.STUCK ? S.time - A.stuckSince[i] : 0); }
   }
-  return { total: EVAC.n, done, moving, stuck, wait, exposed, pct: EVAC.n ? done / EVAC.n * 100 : 0, avg: done ? sum / done : 0, max, elapsed: (S.time - start) * EV_K };
+  return {
+    total: EVAC.n, done, moving, stuck, wait, exposed, ever, stuckAvg: ever ? stuckSum / ever * EV_K : 0,
+    pct: EVAC.n ? done / EVAC.n * 100 : 0, avg: done ? sum / done : 0, max, elapsed: (S.time - start) * EV_K
+  };
 }
 
 function fmtReal(sec) {
@@ -431,9 +446,9 @@ function updateEvacuation(dt) {
       A.y[i] = H(A.x[i], A.z[i]);
       const w = waterDepthAt(A.x[i], A.z[i], A.y[i]);
       if (w > 0.2 || fireLevelAt(A.x[i], A.z[i]) >= 3) A.exposed[i] = 1;
-      if (w > 0.5) { A.st[i] = EV.STUCK; A.why[i] = 1; colorDirty = true; }
+      if (w > 0.5) { setStuck(i, 1); colorDirty = true; }
     } else if (st === EV.STUCK && A.why[i] === 1) {
-      if (waterDepthAt(A.x[i], A.z[i], A.y[i]) < 0.2) { A.st[i] = EV.MOVE; enterGraph(i); colorDirty = true; }
+      if (waterDepthAt(A.x[i], A.z[i], A.y[i]) < 0.2) { clearStuck(i); A.st[i] = EV.MOVE; enterGraph(i); colorDirty = true; }
     }
     drawPerson(i, colorDirty);
     if (colorDirty) { evMesh.instanceColor.needsUpdate = true; colorDirty = false; }
@@ -486,6 +501,7 @@ function resetEvacuation() {
   for (let i = 0; i < EVAC.n; i++) {
     A.x[i] = A.hx[i]; A.z[i] = A.hz[i]; A.y[i] = H(A.x[i], A.z[i]);
     A.st[i] = EV.IDLE; A.exposed[i] = 0; A.final[i] = 0; A.node[i] = -1; A.edge[i] = -1; A.shelter[i] = -1;
+    A.everStuck[i] = 0; A.stuckT[i] = 0; A.why[i] = 0;
     drawPerson(i, true);
   }
   evMesh.instanceMatrix.needsUpdate = true;

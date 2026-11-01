@@ -5,7 +5,7 @@ const ui = {
   sFire: $('#sFire'), sTrees: $('#sTrees'), sCars: $('#sCars'), riskCounts: $('#riskCounts'), riskList: $('#riskList'),
   clock: $('#clock'), active: $('#activeList'),
   evKind: $('#evKind'), evPct: $('#evPct'), evBar: $('#evBar'), evMoving: $('#evMoving'), evDone: $('#evDone'), evStuck: $('#evStuck'),
-  evExposed: $('#evExposed'), evAvg: $('#evAvg'), evMax: $('#evMax'), evNote: $('#evNote'), shelterList: $('#shelterList'),
+  evExposed: $('#evExposed'), evAvg: $('#evAvg'), evMax: $('#evMax'), evEver: $('#evEver'), evStuckT: $('#evStuckT'), evNote: $('#evNote'), shelterList: $('#shelterList'),
   presets: $('#presets'), guide: $('#guide'), results: $('#results tbody')
 };
 
@@ -277,8 +277,8 @@ function updateEvacPanel() {
     ui.evKind.textContent = '· 대기 중';
     ui.evPct.textContent = '0';
     ui.evBar.style.width = '0%';
-    for (const k of ['evMoving', 'evDone', 'evStuck', 'evExposed']) ui[k].textContent = '0';
-    ui.evAvg.textContent = ui.evMax.textContent = '-';
+    for (const k of ['evMoving', 'evDone', 'evStuck', 'evExposed', 'evEver']) ui[k].textContent = '0';
+    ui.evAvg.textContent = ui.evMax.textContent = ui.evStuckT.textContent = '-';
     ui.evNote.textContent = `표본 ${EVAC.n}명 · 재난을 실행하면 대피가 시작됩니다 · 화면 1초 = 실제 ${EV_K}초`;
     return;
   }
@@ -293,6 +293,8 @@ function updateEvacPanel() {
   ui.evExposed.textContent = m.exposed;
   ui.evAvg.textContent = fmtReal(m.avg);
   ui.evMax.textContent = fmtReal(m.max);
+  ui.evEver.textContent = m.ever;
+  ui.evStuckT.textContent = fmtReal(m.stuckAvg);
   const shaking = EVAC.kindId === 'quake' && quakeShaking();
   const last = EVAC.results[EVAC.results.length - 1];
   ui.evNote.textContent = run.done && last ? `대피 ${last.status} · 재난 발생부터 ${fmtReal(last.elapsed)} (실제 시간 환산)` :
@@ -342,7 +344,7 @@ function renderResults() {
   const rows = EVAC.results;
   if (!rows.length) return;
   ui.results.innerHTML = rows.map((r, k) => `<tr title="${esc(r.info)} · ${esc(r.status)}"><td>${k + 1}</td><td>${esc(r.name)} ${r.power}</td><td>${r.shelters}곳</td>`
-    + `<td>${Math.round(r.pct)}%</td><td>${fmtShort(r.avg)}</td><td>${fmtShort(r.max)}</td><td class="${r.stuck ? 'bad' : ''}">${r.stuck}</td><td>${r.exposed}</td></tr>`).join('');
+    + `<td>${Math.round(r.pct)}%</td><td>${fmtShort(r.avg)}</td><td>${fmtShort(r.max)}</td><td class="${r.stuck ? 'bad' : ''}">${r.stuck}</td><td>${r.ever}</td><td>${r.exposed}</td></tr>`).join('');
 }
 function fmtShort(sec) {
   if (!(sec > 0)) return '-';
