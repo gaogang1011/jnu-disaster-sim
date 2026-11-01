@@ -5,7 +5,7 @@ const ui = {
   sFire: $('#sFire'), sTrees: $('#sTrees'), sCars: $('#sCars'), riskCounts: $('#riskCounts'), riskList: $('#riskList'),
   clock: $('#clock'), active: $('#activeList'),
   evKind: $('#evKind'), evPct: $('#evPct'), evBar: $('#evBar'), evMoving: $('#evMoving'), evDone: $('#evDone'), evStuck: $('#evStuck'),
-  evExposed: $('#evExposed'), evAvg: $('#evAvg'), evMax: $('#evMax'), evEver: $('#evEver'), evStuckT: $('#evStuckT'), evNote: $('#evNote'), shelterList: $('#shelterList'),
+  evExposed: $('#evExposed'), evAvg: $('#evAvg'), evMax: $('#evMax'), evEver: $('#evEver'), evStuckT: $('#evStuckT'), evRescued: $('#evRescued'), evNote: $('#evNote'), shelterList: $('#shelterList'),
   presets: $('#presets'), guide: $('#guide'), results: $('#results tbody')
 };
 
@@ -184,6 +184,7 @@ const lv = new V3();
 function updateLabels() {
   const w = view.clientWidth, h = view.clientHeight;
   updateEvacLabels(w, h, lv);
+  updateRescueLabels(w, h, lv);
   if (!S.labels) return;
   for (const l of LABELS) {
     lv.set(l.x, l.y, l.z);
@@ -277,7 +278,7 @@ function updateEvacPanel() {
     ui.evKind.textContent = '· 대기 중';
     ui.evPct.textContent = '0';
     ui.evBar.style.width = '0%';
-    for (const k of ['evMoving', 'evDone', 'evStuck', 'evExposed', 'evEver']) ui[k].textContent = '0';
+    for (const k of ['evMoving', 'evDone', 'evStuck', 'evExposed', 'evEver', 'evRescued']) ui[k].textContent = '0';
     ui.evAvg.textContent = ui.evMax.textContent = ui.evStuckT.textContent = '-';
     ui.evNote.textContent = `표본 ${EVAC.n}명 · 재난을 실행하면 대피가 시작됩니다 · 화면 1초 = 실제 ${EV_K}초`;
     return;
@@ -295,10 +296,12 @@ function updateEvacPanel() {
   ui.evMax.textContent = fmtReal(m.max);
   ui.evEver.textContent = m.ever;
   ui.evStuckT.textContent = fmtReal(m.stuckAvg);
+  ui.evRescued.textContent = m.rescued + (m.carried ? ` (+${m.carried})` : '');
   const shaking = EVAC.kindId === 'quake' && quakeShaking();
   const last = EVAC.results[EVAC.results.length - 1];
-  ui.evNote.textContent = run.done && last ? `대피 ${last.status} · 재난 발생부터 ${fmtReal(last.elapsed)} (실제 시간 환산)` :
-    shaking ? '흔들리는 동안 제자리에서 몸을 보호하는 중입니다' : `재난 발생부터 ${fmtReal(m.elapsed)} 경과 (실제 시간 환산, 화면 1초 = ${EV_K}초)`;
+  const rescueNote = !RESCUE.called ? '' : !RESCUE.arrived ? ` · 구조대 출동 중 (도착까지 ${fmtReal((RESCUE.callT + RESCUE.delay - S.time) * EV_K)})` : m.rescued ? ` · 구조 ${m.rescued}명, 평균 구조 대기 ${fmtReal(m.rescueAvg)}` : ' · 구조대 현장 활동 중';
+  ui.evNote.textContent = (run.done && last ? `대피 ${last.status} · 재난 발생부터 ${fmtReal(last.elapsed)} (실제 시간 환산)` :
+    shaking ? '흔들리는 동안 제자리에서 몸을 보호하는 중입니다' : `재난 발생부터 ${fmtReal(m.elapsed)} 경과 (실제 시간 환산, 화면 1초 = ${EV_K}초)`) + rescueNote;
   renderShelterCounts();
 }
 
@@ -344,7 +347,7 @@ function renderResults() {
   const rows = EVAC.results;
   if (!rows.length) return;
   ui.results.innerHTML = rows.map((r, k) => `<tr title="${esc(r.info)} · ${esc(r.status)}"><td>${k + 1}</td><td>${esc(r.name)} ${r.power}</td><td>${r.shelters}곳</td>`
-    + `<td>${Math.round(r.pct)}%</td><td>${fmtShort(r.avg)}</td><td>${fmtShort(r.max)}</td><td class="${r.stuck ? 'bad' : ''}">${r.stuck}</td><td>${r.ever}</td><td>${r.exposed}</td></tr>`).join('');
+    + `<td>${Math.round(r.pct)}%</td><td>${fmtShort(r.avg)}</td><td>${fmtShort(r.max)}</td><td class="${r.stuck ? 'bad' : ''}">${r.stuck}</td><td>${r.ever}</td><td>${r.rescued}</td><td>${r.exposed}</td></tr>`).join('');
 }
 function fmtShort(sec) {
   if (!(sec > 0)) return '-';
@@ -403,6 +406,7 @@ function frame(now) {
   updateEnvironment(dt);
   updateHazards(dt);
   updateEvacuation(dt);
+  updateRescue(dt);
   updateBuildings(dt);
   updateTrees(dt);
   updateLamps();
@@ -430,7 +434,7 @@ const STEPS = [
   ['지표 텍스처 그리기', () => paintGround()],
   [`건물 ${DATA.B.length}동 세우기`, () => buildCampus()],
   ['수목과 가로등 배치', () => { placeTrees(); placeLamps(); }],
-  ['차량 배치와 보행 경로망 구성', () => { initAgents(); evacInit(); }],
+  ['차량 배치와 보행 경로망 구성', () => { initAgents(); evacInit(); rescueInit(); }],
   ['조명과 대기 계산', () => { setupComposer(); resize(); setTOD('day', true); updateTOD(1); updateHeightTex(); buildLabels(); }]
 ];
 function boot(i) {
@@ -462,4 +466,4 @@ setMode('quake');
 resize();
 boot(0);
 if (TEST_MODE) window.__evacStep = updateEvacuation;
-if (TEST_MODE) window.__sim = { PRESETS, runPreset, finishRun, PROJ, VOLC, TYPH, LOG, SEGS, BLD, scene, camera, controls, renderer, FACADES, S, DISASTERS, T, CARS, EVAC, A, EV, evacMetrics, buildingInfo, setMode, H, TERR_U, FLOOD, setTOD, resetAll, camFly };
+if (TEST_MODE) window.__sim = { PRESETS, runPreset, finishRun, RESCUE, PROJ, VOLC, TYPH, LOG, SEGS, BLD, scene, camera, controls, renderer, FACADES, S, DISASTERS, T, CARS, EVAC, A, EV, evacMetrics, buildingInfo, setMode, H, TERR_U, FLOOD, setTOD, resetAll, camFly };

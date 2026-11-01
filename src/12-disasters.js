@@ -267,7 +267,7 @@ function updateFlood(dt) {
     ROAR.v = Math.max(ROAR.v, clamp(1 - fd / 900, 0, 1) * 0.8);
     if (fd < 200) addShake(0.15 * (1 - fd / 200) * (1 + F.P * 0.1));
   } else if (F.phase === 'hold') {
-    if (F.t > (F.kind === 'rain' ? 14 : 8)) {
+    if (F.t > (F.kind === 'rain' ? 50 : 45)) {
       F.phase = 'recede'; F.t = 0; WATER_U.uFlow.value = -0.6;
       if (F.kind === 'rain' && !TYPH.on) { S.stormT = 0; S.windT.set(1.6, 2.2); }
       logEvent('물이 빠지기 시작', 'ok');

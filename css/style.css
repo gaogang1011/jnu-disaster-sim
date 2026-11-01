@@ -198,3 +198,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .results td.bad{color:var(--crit)}
 .results tr.empty td{text-align:left;color:var(--muted);white-space:normal}
 @media (max-width:760px){.presets{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.stats .b dd{color:#5fd0ff}
+.legend .d[data-s="5"]{background:#5fd0ff}
+.lbl.rescue{background:rgba(120,50,10,.8);border-color:rgba(255,122,26,.8);color:#ffe2cc;font-weight:600}
+.lbl.rescue::after{background:rgba(255,122,26,.8)}
