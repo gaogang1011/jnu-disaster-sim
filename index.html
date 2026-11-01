@@ -29,6 +29,7 @@
         <button class="tb sw" id="tTrack" aria-pressed="true">추적 카메라</button>
         <button class="tb sw" id="tSlow" aria-pressed="false">슬로 모션</button>
         <button class="tb sw" id="tRisk" aria-pressed="true">위험도 색상</button>
+        <button class="tb sw" id="tRoute" aria-pressed="true">대피 경로</button>
         <button class="tb sw" id="tRespond" aria-pressed="true">소방 출동</button>
         <button class="tb sw" id="tLabels" aria-pressed="true">이름표</button>
         <button class="tb sw" id="tSound" aria-pressed="true">소리</button>
@@ -63,6 +64,25 @@
       <input type="range" id="power" min="1" max="10" value="5">
       <div class="scale"><span>약</span><span>강</span></div>
       <p id="modeInfo"></p>
+    </section>
+    <section>
+      <h2>대피 현황 <span class="keys" id="evKind">· 대기 중</span></h2>
+      <div class="dmg"><span class="lbl2">대피 완료</span><span class="big"><span id="evPct">0</span><small>%</small></span></div>
+      <div class="meter"><i id="evBar"></i></div>
+      <dl class="stats">
+        <div><dt>대피 중</dt><dd id="evMoving">0</dd></div>
+        <div class="g"><dt>도착</dt><dd id="evDone">0</dd></div>
+        <div class="c"><dt>고립</dt><dd id="evStuck">0</dd></div>
+        <div class="f"><dt>위험 노출</dt><dd id="evExposed">0</dd></div>
+        <div><dt>평균 시간</dt><dd id="evAvg">-</dd></div>
+        <div><dt>최대 시간</dt><dd id="evMax">-</dd></div>
+      </dl>
+      <p class="note" id="evNote"></p>
+      <div class="legend"><span><i class="d" data-s="1"></i>몸 보호·대기</span><span><i class="d" data-s="2"></i>대피 중</span><span><i class="d" data-s="3"></i>도착</span><span><i class="d" data-s="4"></i>고립</span></div>
+    </section>
+    <section>
+      <h2>대피소 <span class="keys">· 끄면 다른 곳으로 경로를 다시 찾습니다</span></h2>
+      <ul class="shelters" id="shelterList"></ul>
     </section>
     <section>
       <h2>위험 평가 <span class="keys">· 캠퍼스 건물</span></h2>
@@ -120,6 +140,7 @@
 <script src="src/08-agents.js"></script>
 <script src="src/09-sound.js"></script>
 <script src="src/10-environment.js"></script>
+<script src="src/11-evacuation.js"></script>
 <script src="src/12-disasters.js"></script>
 <script src="src/13-main.js"></script>
 </body>

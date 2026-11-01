@@ -177,7 +177,7 @@ function updateQuakes(dt) {
         emitSmoke(fpt.x, fpt.y, fpt.z, fpt.nx * 2, -1, fpt.nz * 2, rand(2, 4), 0.6, 0.57, 0.52, rand(2, 4), 0.5);
         spawnDebris(fpt.x, fpt.y, fpt.z, fpt.nx * rand(1, 3), 0, fpt.nz * rand(1, 3), rand(0.25, 0.7), s.wallMat.color);
       }
-      if (s.hp < s.maxHp * 0.55 && Math.random() < dt * 0.012 * k * q.P) { if (igniteSeg(s, true)) logEvent(`${s.b.name} 가스 누출 화재`, 'fire', s.b.name); }
+      if (s.hp < s.maxHp * 0.55 && Math.random() < dt * 0.006 * k * q.P) { if (igniteSeg(s, true)) logEvent(`${s.b.name} 가스 누출 화재`, 'fire', s.b.name); }
     }
     q.treeT -= dt;
     if (q.treeT <= 0) {
@@ -522,3 +522,12 @@ const DISASTERS = {
   fire: { name: '화재', key: '5', guide: 'fire', shelter: 'open', desc: '불이 바람을 타고 숲과 건물로 번집니다. 불에서 먼 넓은 곳으로 대피합니다', radius: P => 10 + P * 2.4, run: startFire, info: P => `발화 범위 ${Math.round(10 + P * 2.4)}m · 풍속 ${(Math.hypot(2 + P * 0.7, 2.6 + P * 0.8)).toFixed(1)}m/s` },
   volcano: { name: '한라산 분화', key: '6', guide: 'volcano', shelter: 'indoor', desc: '한라산에서 화산탄과 화산재가 날아옵니다. 튼튼한 건물 안으로 대피합니다', radius: P => 140 + P * 22, ring2: true, run: startEruption, info: P => `화산탄 낙하 범위 ${Math.round(140 + P * 22)}m · ${Math.round(34 + P * 2.5)}초` }
 };
+
+for (const [id, d] of Object.entries(DISASTERS)) {
+  const run = d.run;
+  d.run = (x, z) => {
+    const ok = run(x, z);
+    if (ok !== false) evacBegin(id);
+    return ok;
+  };
+}

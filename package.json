@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node scripts/serve.mjs",
-    "test": "node --test test/data.test.mjs test/route.test.mjs",
+    "test": "node --test test/data.test.mjs test/route.test.mjs test/structure.test.mjs",
     "test:e2e": "node test/e2e/run.mjs",
     "bundle": "node scripts/bundle.mjs",
     "screenshots": "node test/e2e/run.mjs --shots"

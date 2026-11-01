@@ -1,106 +1,7 @@
-const PED_MAX = IS_MOBILE ? 150 : 260;
-const pedGeo = (() => {
-  const body = new THREE.CylinderGeometry(0.26, 0.32, 1.05, 6).translate(0, 0.72, 0);
-  const head = new THREE.SphereGeometry(0.2, 7, 6).translate(0, 1.42, 0);
-  return mergeGeos([body, head]);
-})();
-const pedMesh = new THREE.InstancedMesh(pedGeo, new THREE.MeshStandardMaterial({ roughness: 0.85, vertexColors: false }), PED_MAX);
-pedMesh.castShadow = true;
-pedMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(PED_MAX * 3), 3);
-scene.add(pedMesh);
-const PED = [];
-const pedPal = ['#d8534f', '#4f7fd8', '#e0a33a', '#48a071', '#8a5bbf', '#d96fa0', '#3fb2c4', '#c96a3a', '#e8e3dc', '#424852'].map(C);
-
-function walkableNear(x, z) {
-  const c = classAt(x, z);
-  return c === CLS.open || c === CLS.road || c === CLS.grass;
-}
-function placePeds() {
-  const r = mulberry32(55);
-  let tries = 0;
-  while (PED.length < PED_MAX && tries++ < 6000) {
-    const x = rand(-470, 440), z = rand(-560, 540);
-    if (!pointInPoly(x, z, DATA.campus)) continue;
-    const c = classAt(x, z);
-    if (c !== CLS.open && c !== CLS.road && c !== CLS.grass && c !== CLS.sport) continue;
-    let near = false;
-    for (const s of segsNear(x, z, 6)) if (segDist(s, x, z) < 2.2) { near = true; break; }
-    if (near) continue;
-    const col = pedPal[Math.floor(r() * pedPal.length)];
-    PED.push({ x, z, y: H(x, z), dir: r() * TAU, spd: 0, panic: 0, phase: r() * TAU,
-      tx: x + rand(-40, 40), tz: z + rand(-40, 40), col, bob: 0, alive: 1, idle: rand(0, 3) });
-  }
-  PED.forEach((p, i) => pedMesh.setColorAt(i, tmpC.copy(p.col)));
-  pedMesh.count = PED.length;
-  pedMesh.instanceColor.needsUpdate = true;
-}
-
 const THREATS = [];
 function addThreat(x, z, r, strength, ttl) { THREATS.push({ x, z, r, strength, ttl }); }
 function updateThreats(dt) {
   for (let i = THREATS.length - 1; i >= 0; i--) { THREATS[i].ttl -= dt; if (THREATS[i].ttl <= 0) THREATS.splice(i, 1); }
-}
-
-function updatePeds(dt) {
-  const substep = Math.min(dt, 0.05);
-  for (let i = 0; i < PED.length; i++) {
-    const p = PED[i];
-    if (!p.alive) continue;
-    let fx = 0, fz = 0, maxThreat = 0;
-    for (const th of THREATS) {
-      const dx = p.x - th.x, dz = p.z - th.z, d = Math.hypot(dx, dz) || 1;
-      if (d < th.r) { const w = th.strength * (1 - d / th.r); fx += (dx / d) * w; fz += (dz / d) * w; maxThreat = Math.max(maxThreat, 1 - d / th.r); }
-    }
-    const wl = waterLevel();
-    if (wl > -900 && p.y < wl + 0.3) { const g = DATA.P.gwonje; const dx = g[0] - p.x, dz = g[1] - p.z, d = Math.hypot(dx, dz) || 1; fx += (dx / d) * 1.5; fz += (dz / d) * 1.5; maxThreat = Math.max(maxThreat, 0.6); }
-    p.panic = Math.max(maxThreat, p.panic - dt * 0.4);
-    if (p.panic > 0.05) {
-      let a = Math.atan2(fz, fx);
-      a += (vnoise2(p.x * 0.1 + S.time, p.z * 0.1) - 0.5) * 0.8;
-      p.dir = a;
-      p.spd = lerp(p.spd, 7 + p.panic * 6, damp(5, dt));
-    } else {
-      p.idle -= dt;
-      const dtx = p.tx - p.x, dtz = p.tz - p.z, dd = Math.hypot(dtx, dtz);
-      if (dd < 3 || p.idle < 0) {
-        p.idle = rand(1, 4);
-        const na = p.dir + rand(-1.6, 1.6);
-        p.tx = clamp(p.x + Math.cos(na) * rand(15, 45), -480, 450);
-        p.tz = clamp(p.z + Math.sin(na) * rand(15, 45), -570, 545);
-      }
-      const want = Math.atan2(p.tz - p.z, p.tx - p.x);
-      let da = want - p.dir; while (da > Math.PI) da -= TAU; while (da < -Math.PI) da += TAU;
-      p.dir += da * damp(4, dt);
-      p.spd = lerp(p.spd, 1.5, damp(2, dt));
-    }
-    const nx = p.x + Math.cos(p.dir) * p.spd * substep, nz = p.z + Math.sin(p.dir) * p.spd * substep;
-    let blocked = false;
-    if (p.panic < 0.3) { const c = classAt(nx, nz); if (c === CLS.building || c === CLS.water) blocked = true; }
-    if (!blocked && nx > -485 && nx < 455 && nz > -575 && nz < 550) { p.x = nx; p.z = nz; }
-    else p.dir += 2.2;
-    p.y = H(p.x, p.z);
-    p.bob += p.spd * substep * 3;
-    const lean = p.panic > 0.3 ? 0.18 : 0;
-    tmpE.set(lean * Math.cos(p.dir), -p.dir + Math.PI / 2, lean * Math.sin(p.dir));
-    tmpQ.setFromEuler(tmpE);
-    const bob = Math.abs(Math.sin(p.bob)) * 0.08 * Math.min(1, p.spd);
-    tmpM.compose(tmpV.set(p.x, p.y + bob, p.z), tmpQ, tmpV2.set(1, 1 + bob * 0.2, 1));
-    pedMesh.setMatrixAt(i, tmpM);
-  }
-  pedMesh.instanceMatrix.needsUpdate = true;
-}
-function killPedsAround(x, z, r) {
-  for (let i = 0; i < PED.length; i++) {
-    const p = PED[i];
-    if (p.alive && Math.hypot(p.x - x, p.z - z) < r) { p.alive = 0; pedMesh.setMatrixAt(i, HIDE); }
-  }
-  pedMesh.instanceMatrix.needsUpdate = true;
-}
-function resetPeds() {
-  const r = mulberry32(55);
-  for (const p of PED) { p.alive = 1; p.panic = 0; p.spd = 0; p.y = H(p.x, p.z); }
-  PED.forEach((p, i) => pedMesh.setMatrixAt(i, tmpM.compose(tmpV.set(p.x, p.y, p.z), tmpQ.setFromAxisAngle(UP, -p.dir), tmpV2.set(1, 1, 1))));
-  pedMesh.instanceMatrix.needsUpdate = true;
 }
 
 const carBodyGeo = mergeGeos([
@@ -253,11 +154,10 @@ function updateTrucks(dt) {
 }
 function clearTrucks() { for (const t of TRUCKS) scene.remove(t.g); TRUCKS.length = 0; }
 
-function initAgents() { placePeds(); buildCarPaths(); placeCars(); }
+function initAgents() { buildCarPaths(); placeCars(); }
 function updateAgents(dt) {
   updateThreats(dt);
-  updatePeds(dt);
   updateCars(dt);
   updateTrucks(dt);
 }
-function resetAgents() { resetPeds(); resetCars(); clearTrucks(); THREATS.length = 0; }
+function resetAgents() { resetCars(); clearTrucks(); THREATS.length = 0; }
