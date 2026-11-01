@@ -117,6 +117,29 @@ const row = await page.evaluate(() => { window.__sim.finishRun('완료'); return
 check('실행 기록표에 결과가 쌓임', row.length >= 1 && row[row.length - 1].includes('태풍 4') && row[row.length - 1].includes('1곳'), row[row.length - 1]);
 check('대피소를 끄면 남은 대피소로만 대피', only1.done > 0 && only1.ids.length === 1 && only1.ids[0] === 'union', `도착 ${only1.done}명 → ${only1.ids.join(',')}`);
 
+const rs = await page.evaluate(() => {
+  const s = window.__sim;
+  s.resetAll();
+  s.S.power = 9;
+  s.setMode('tsunami');
+  s.DISASTERS.tsunami.run(0, 0);
+  const t0 = s.S.time;
+  for (let k = 0; k < 900; k++) {
+    s.S.time += 0.1;
+    updateHazards(0.1); updateBuildings(0.1); updateEvacuation(0.1); updateRescue(0.1);
+    if (s.RESCUE.teams.some(t => t.state === 'toShelter')) break;
+  }
+  const m = s.evacMetrics();
+  const cam = s.RESCUE.teams.find(t => t.state === 'toShelter') || s.RESCUE.teams[0];
+  camRelease();
+  s.controls.target.set(cam.x, cam.y, cam.z);
+  s.camera.position.set(cam.x + 160, cam.y + 170, cam.z - 220);
+  return { t: Math.round((s.S.time - t0) * 10), ever: m.ever, rescued: m.rescued, carried: m.carried, wait: Math.round(m.rescueAvg), arrived: s.RESCUE.arrived, log: s.LOG.some(l => l.msg.includes('119 구조 요청')) };
+});
+check('고립자 기록과 구조대 구조', rs.log && rs.arrived && rs.ever > 0 && rs.rescued > 0, `고립 경험 ${rs.ever}명, 구조 ${rs.rescued}명, 평균 구조 대기 ${rs.wait}초 (재난 후 ${Math.round(rs.t / 60)}분)`);
+await page.waitForTimeout(1500);
+if (takeShots) await shot('rescue');
+
 await page.click('.preset[data-k="1"]');
 await page.waitForTimeout(800);
 check('시나리오 버튼 (야간 지진해일)', await page.evaluate(() => window.__sim.S.mode === 'tsunami' && window.__sim.S.tod === 'night' && window.__sim.EVAC.kind === 'high' && document.querySelector('#guide h3').textContent.includes('지진해일')));
