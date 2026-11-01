@@ -247,7 +247,7 @@ function updateTrucks(dt) {
       s.wet = 2;
       s.fuel -= dt * 10;
       if (Math.random() < dt * 8) emitSmoke(s.cx + rand(-3, 3), s.b.yGround + 4, s.cz + rand(-3, 3), 0, 3, 0, 5, 0.7, 0.7, 0.72, 2, 0.4);
-      if (s.fuel <= 0 || s.hp > s.maxHp * 0.6) { s.fire = 0; s.fuel = 0; logEvent(`${s.b.name} 화재 진압`, 'ok', s.b.name); t.target = null; }
+      if (s.fuel <= 0 || s.hp > s.maxHp * 0.6) { s.fire = 0; s.fuel = 0; refreshSeg(s); logEvent(`${s.b.name} 화재 진압`, 'ok', s.b.name); t.target = null; }
     }
   }
 }

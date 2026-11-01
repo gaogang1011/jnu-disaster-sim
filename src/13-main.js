@@ -2,7 +2,7 @@ const $ = s => document.querySelector(s);
 const ui = {
   modes: $('#modes'), power: $('#power'), powerOut: $('#powerOut'), info: $('#modeInfo'), desc: $('#modeDesc'),
   log: $('#log'), hint: $('#hint'), tip: $('#tip'), labels: $('#labels'), loader: $('#loader'), loadBar: $('#loadBar'), loadMsg: $('#loadMsg'),
-  sDamage: $('#sDamage'), sDamageBar: $('#sDamageBar'), sCollapsed: $('#sCollapsed'), sFire: $('#sFire'), sTrees: $('#sTrees'), sPeople: $('#sPeople'), sCars: $('#sCars'), sDamaged: $('#sDamaged'),
+  sFire: $('#sFire'), sTrees: $('#sTrees'), sCars: $('#sCars'), riskCounts: $('#riskCounts'), riskList: $('#riskList'),
   clock: $('#clock'), active: $('#activeList')
 };
 
@@ -59,8 +59,9 @@ function bindToggle(id, key, onChange) {
   el.addEventListener('click', () => { S[key] = !S[key]; sync(); if (onChange) onChange(S[key]); });
   sync();
 }
-S.respond = true; S.labels = true;
+S.respond = true; S.labels = true; S.riskView = true;
 bindToggle('#tSlow', 'slowmo');
+bindToggle('#tRisk', 'riskView', () => refreshAllSegs());
 bindToggle('#tTrack', 'track', v => { if (!v) camRelease(); });
 bindToggle('#tRespond', 'respond', v => { if (!v) clearTrucks(); });
 bindToggle('#tSound', 'sound', v => { sfx.init(); sfx.setEnabled(v); });
@@ -141,7 +142,7 @@ function updateHover(dt) {
     const st = ui.tip.querySelector('.st');
     st.textContent = info.state;
     st.dataset.s = info.state;
-    ui.tip.querySelector('.meta').textContent = `${b.levels}층 · 구조 건전도 ${Math.round(info.integrity * 100)}%`;
+    ui.tip.querySelector('.meta').textContent = `${b.levels}층 · 구조 건전도 ${Math.round(info.integrity * 100)}%` + (info.flood > 0.05 ? ` · 침수 ${info.flood.toFixed(1)}m` : '') + (info.cause && info.risk ? ` · ${info.cause}` : '');
     ui.tip.querySelector('.bar i').style.width = Math.round(info.integrity * 100) + '%';
     const vr = view.getBoundingClientRect();
     const x = Math.min(e.clientX - vr.left + 16, vr.width - 230), y = Math.min(e.clientY - vr.top + 18, vr.height - 90);
@@ -181,10 +182,9 @@ function updateLabels() {
     const vis = lv.z < 1 && Math.abs(lv.x) < 1.05 && Math.abs(lv.y) < 1.05 && (l.far || d < 1500);
     if (!vis) { if (!l.el.hidden) l.el.hidden = true; continue; }
     l.el.hidden = false;
-    let dead = false;
-    if (l.b) { const st = buildingInfo(l.b).state; dead = st === '붕괴'; l.el.dataset.s = st; }
+    if (l.b) l.el.dataset.s = buildingInfo(l.b).state;
     l.el.style.transform = `translate(${((lv.x + 1) / 2) * w}px, ${((1 - lv.y) / 2) * h}px) translate(-50%, -100%)`;
-    l.el.style.opacity = l.far ? 0.9 : clamp(1.25 - d / 1300, 0.35, 1) * (dead ? 0.55 : 1);
+    l.el.style.opacity = l.far ? 0.9 : clamp(1.25 - d / 1300, 0.35, 1);
   }
 }
 
@@ -226,28 +226,26 @@ function updateStats(force) {
   statT -= 1 / 60;
   if (!force && statT > 0) return;
   statT = 0.3;
-  let tot = 0, ok = 0, col = 0, dmg = 0, fireB = 0;
+  const counts = [0, 0, 0, 0], risky = [];
+  let fireB = 0;
   for (const b of BLD) {
     if (b.style === 'house' || !pointInPoly(b.cx, b.cz, DATA.campus)) continue;
     const i = buildingInfo(b);
-    tot += b.area; ok += b.area * i.integrity;
-    if (i.state === '붕괴' || i.state === '부분 붕괴') col++;
-    else if (i.state !== '정상') dmg++;
+    counts[i.risk]++;
     if (i.burning) fireB++;
+    if (i.risk > 0) risky.push({ b, i });
   }
+  ui.riskCounts.querySelectorAll('.rc').forEach((el, k) => { el.querySelector('.n').textContent = counts[k]; });
+  risky.sort((a, c) => c.i.risk - a.i.risk || a.i.integrity - c.i.integrity);
+  const html = risky.slice(0, 5).map(({ b, i }) => `<li><span class="lv" data-l="${i.risk}">${RISK_NAMES[i.risk]}</span><span class="nm">${b.name}</span><span class="cs">${i.burning ? '화재' : i.cause || ''}</span></li>`).join('')
+    + (risky.length > 5 ? `<li class="empty">외 ${risky.length - 5}동</li>` : '');
+  const next = html || '<li class="empty">위험한 건물이 없습니다.</li>';
+  if (ui.riskList.innerHTML !== next) ui.riskList.innerHTML = next;
   let treeDown = 0;
   for (let i = 0; i < T.n; i++) if (T.st[i] >= 2 || T.tilt[i] > 0.9) treeDown++;
-  const dead = PED.reduce((a, p) => a + (p.alive ? 0 : 1), 0);
   const cars = CARS.reduce((a, c) => a + (c.alive ? 0 : 1), 0);
-  const dmgPct = tot ? (1 - ok / tot) * 100 : 0;
-  ui.sDamage.textContent = dmgPct < 10 && dmgPct > 0 ? dmgPct.toFixed(1) : Math.round(dmgPct);
-  ui.sDamageBar.style.width = Math.min(100, dmgPct) + '%';
-  ui.sDamageBar.dataset.level = dmgPct > 40 ? 'crit' : dmgPct > 10 ? 'warn' : 'ok';
-  ui.sCollapsed.textContent = col;
-  ui.sDamaged.textContent = dmg;
   ui.sFire.textContent = fireB + (burningTrees.size ? ` / ${burningTrees.size}` : '');
   ui.sTrees.textContent = treeDown;
-  ui.sPeople.textContent = dead;
   ui.sCars.textContent = cars;
   const act = [];
   if (PROJ.length) act.push(`화산탄 ${PROJ.length}`);

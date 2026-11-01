@@ -137,3 +137,25 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
   .hint{display:none}
   .credit{display:none}
 }
+.risk-counts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-bottom:10px}
+.rc{display:flex;flex-direction:column;gap:2px;padding:7px 8px;border-radius:7px;background:rgba(255,255,255,.04);border-left:3px solid var(--line-strong)}
+.rc .n{font-family:var(--f-mono);font-size:18px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.1}
+.rc .t{font-size:11px;color:var(--muted)}
+.rc[data-l="0"]{border-left-color:var(--ok)}
+.rc[data-l="1"]{border-left-color:#f2c641}
+.rc[data-l="2"]{border-left-color:#f08a2c}
+.rc[data-l="3"]{border-left-color:var(--crit)}
+.risk-list{list-style:none;margin:0 0 12px;padding:0;display:flex;flex-direction:column;gap:4px;font-size:12.5px}
+.risk-list li{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:baseline;min-width:0}
+.risk-list .lv{font-size:10.5px;font-weight:600;padding:1px 6px;border-radius:999px}
+.risk-list .lv[data-l="1"]{background:rgba(242,198,65,.18);color:#f2c641}
+.risk-list .lv[data-l="2"]{background:rgba(240,138,44,.2);color:#f5a35a}
+.risk-list .lv[data-l="3"]{background:rgba(226,65,47,.22);color:#ff8a7d}
+.risk-list .nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.risk-list .cs{color:var(--muted);font-size:11.5px;white-space:nowrap}
+.risk-list .empty{display:block;color:var(--muted)}
+.tip .st[data-s="주의"]{background:rgba(242,198,65,.18);color:#f2c641}
+.tip .st[data-s="경고"]{background:rgba(240,138,44,.2);color:#f5a35a}
+.tip .st[data-s="위험"]{background:rgba(226,65,47,.22);color:#ff8a7d}
+.lbl[data-s="경고"]{border-color:#f08a2c;color:#f5c08a}
+.lbl[data-s="위험"]{border-color:var(--crit);color:#ff9a8d}

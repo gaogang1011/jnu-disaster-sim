@@ -231,9 +231,9 @@ function makeSegment(b, piece) {
   const maxHp = 100 * (0.75 + Math.sqrt(area) / 45) * STRUCT[b.style];
   const seg = {
     b, mesh, wallMat, roofMat, poly: piece, cx: pc[0], cz: pc[1], area, r: Math.sqrt(area / Math.PI),
-    maxHp, hp: maxHp, state: 0, fire: 0, fuel: 0, burnT: 0, powered: 1, soot: 0,
-    tiltX: 0, tiltZ: 0, swayX: 0, swayZ: 0, colT: 0, colDur: 2.5, colDir: new V3(), targetScale: 0.15,
-    roofIds: [], nb: [], wet: 0, flick: Math.random() * 10, quakeDmg: 0
+    maxHp, hp: maxHp, fire: 0, fuel: 0, burnT: 0, powered: 1, soot: 0, risk: 0, flood: 0, causes: {},
+    tiltX: 0, tiltZ: 0, swayX: 0, swayZ: 0, tilted: false,
+    roofIds: [], nb: [], wet: 0, flick: Math.random() * 10
   };
   mesh.userData.seg = seg;
   b.segs.push(seg); SEGS.push(seg); SEG_MESHES.push(mesh);
@@ -253,79 +253,67 @@ function makeSegment(b, piece) {
   }
 }
 
-function segState(seg) {
-  if (seg.state === 2) return '붕괴';
-  if (seg.state === 1) return '붕괴 중';
-  if (seg.fire === 1) return '화재';
-  if (seg.fire === 2) return '전소';
-  if (seg.hp < seg.maxHp * 0.999) return '손상';
-  return '정상';
+const RISK_NAMES = ['안전', '주의', '경고', '위험'];
+const RISK_COLORS = [null, C('#f2c641'), C('#f08a2c'), C('#e2412f')];
+const CAUSE_NAMES = { quake: '지진 흔들림', flood: '침수', fire: '화재', wind: '강풍', lightning: '낙뢰', blast: '화산탄' };
+
+function segRisk(seg) {
+  const d = 1 - Math.max(seg.hp, 0) / seg.maxHp;
+  let lvl = d < 0.15 ? 0 : d < 0.4 ? 1 : d < 0.7 ? 2 : 3;
+  if (seg.fire === 1 || seg.flood >= 0.5) lvl = Math.max(lvl, 2);
+  else if (seg.flood > 0.1) lvl = Math.max(lvl, 1);
+  return lvl;
 }
+
 function buildingInfo(b) {
-  let hp = 0, tot = 0, burning = 0, col = 0, dmg = 0;
+  let hp = 0, tot = 0, burning = 0, risk = 0, flood = 0;
+  const causes = {};
   for (const s of b.segs) {
     tot += s.area;
-    hp += s.area * (s.state === 2 ? 0 : Math.max(0, s.hp) / s.maxHp);
+    hp += s.area * Math.max(0, s.hp) / s.maxHp;
     if (s.fire === 1) burning++;
-    if (s.state >= 1) col += s.area;
-    if (s.hp < s.maxHp * 0.999 || s.fire) dmg++;
+    risk = Math.max(risk, s.risk);
+    flood = Math.max(flood, s.flood);
+    for (const k in s.causes) causes[k] = (causes[k] || 0) + s.causes[k];
   }
-  const integrity = tot ? hp / tot : 1;
-  let state = '정상';
-  if (col / tot > 0.5) state = '붕괴';
-  else if (col > 0) state = '부분 붕괴';
-  else if (burning) state = '화재';
-  else if (dmg) state = '손상';
-  return { integrity, state, burning };
+  if (flood > 0.1) causes.flood = Math.max(causes.flood || 0, flood * 30);
+  let cause = null, cv = 0;
+  for (const k in causes) if (causes[k] > cv) { cv = causes[k]; cause = k; }
+  const state = burning ? '화재' : RISK_NAMES[risk];
+  return { integrity: tot ? hp / tot : 1, risk, state, burning, flood, cause: cause ? CAUSE_NAMES[cause] || cause : null };
 }
 
 function refreshSeg(seg) {
   const k = 1 - Math.max(seg.hp, 0) / seg.maxHp;
-  const soot = Math.max(seg.soot, k * 0.5);
-  if (seg.state === 2) {
-    seg.wallMat.color.copy(seg.b.tint).lerp(RUBBLE, 0.75).lerp(SOOT, seg.soot * 0.6);
-    seg.roofMat.color.copy(RUBBLE).lerp(SOOT, seg.soot * 0.5);
+  seg.risk = segRisk(seg);
+  if (S.riskView && seg.risk > 0) {
+    seg.wallMat.color.copy(seg.b.tint).lerp(RISK_COLORS[seg.risk], 0.72);
+    seg.roofMat.color.copy(RISK_COLORS[seg.risk]);
   } else {
+    const soot = Math.max(seg.soot, k * 0.5);
     seg.wallMat.color.copy(seg.b.tint).lerp(SOOT, soot);
     seg.roofMat.color.copy(ROOF_BASE).lerp(SOOT, soot * 0.9);
   }
   if (k > 0.3) seg.powered = 0;
-  if (k > 0.45 && !seg.tilted) {
+  if (k > 0.7 && !seg.tilted) {
     seg.tilted = true;
-    seg.tiltX = rand(-0.025, 0.025); seg.tiltZ = rand(-0.025, 0.025);
+    seg.tiltX = rand(-0.012, 0.012); seg.tiltZ = rand(-0.012, 0.012);
   }
 }
+function refreshAllSegs() { for (const s of SEGS) refreshSeg(s); }
 
 const dmgListeners = [];
 function damageSeg(seg, amount, dir, cause) {
-  if (seg.state !== 0 || amount <= 0) return;
-  seg.hp -= amount;
-  if (seg.hp <= 0) collapseSeg(seg, dir || new V3(rand(-1, 1), 0, rand(-1, 1)).normalize(), cause);
-  else refreshSeg(seg);
+  if (amount <= 0) return;
+  seg.hp = Math.max(0, seg.hp - amount);
+  if (cause) seg.causes[cause] = (seg.causes[cause] || 0) + amount;
+  const before = seg.risk;
+  refreshSeg(seg);
+  if (seg.risk === 3 && before < 3 && !seg.b.warned) {
+    seg.b.warned = true;
+    logEvent(`${seg.b.name} 붕괴 위험`, 'crit', seg.b.name);
+  }
   for (const f of dmgListeners) f(seg);
-}
-
-function collapseSeg(seg, dir, cause) {
-  if (seg.state !== 0) return;
-  seg.state = 1;
-  seg.hp = 0;
-  seg.powered = 0;
-  seg.colT = 0;
-  seg.colDur = 1.6 + Math.min(2.2, (seg.b.yTop - seg.b.yGround) / 12);
-  seg.colDir.copy(dir).setY(0);
-  if (seg.colDir.lengthSq() < 0.01) seg.colDir.set(rand(-1, 1), 0, rand(-1, 1));
-  seg.colDir.normalize();
-  const total = seg.b.yTop - seg.b.yBottom, g0 = seg.b.yGround - seg.b.yBottom;
-  seg.targetScale = clamp((g0 + 2.2) / total, 0.05, 0.6);
-  seg.debrisAcc = 0;
-  for (const id of seg.roofIds) { tmpM.makeScale(0, 0, 0); roofBoxes.setMatrixAt(id, tmpM); }
-  roofBoxes.instanceMatrix.needsUpdate = true;
-  dustRing(seg.cx, seg.b.yGround, seg.cz, seg.r * 1.4, Math.min(70, 20 + seg.area / 25));
-  if (typeof sfx !== 'undefined') sfx.collapse(seg.cx, seg.b.yGround, seg.cz, Math.min(1, seg.area / 900));
-  logEvent(`${seg.b.name} ${seg.b.segs.length > 1 ? '일부 ' : ''}붕괴`, 'crit', seg.b.name);
-  later(0.9, () => {
-    for (const n of seg.nb) if (n.state === 0) damageSeg(n, n.maxHp * rand(0.12, 0.4), seg.colDir, 'progressive');
-  });
 }
 
 function igniteSeg(seg, quiet) {
@@ -346,7 +334,7 @@ function randomFacadePoint(seg, out) {
   let nx = c[1] - a[1], nz = -(c[0] - a[0]);
   const l = Math.hypot(nx, nz) || 1; nx /= l; nz /= l;
   if (pointInPoly(x + nx * 1.5, z + nz * 1.5, p)) { nx = -nx; nz = -nz; }
-  const top = seg.state === 2 ? seg.b.yGround + 2 : seg.b.yGround + (seg.b.yTop - seg.b.yGround) * seg.mesh.scale.y;
+  const top = seg.b.yTop;
   out.set(x + nx * 0.6, lerp(seg.b.yGround + 1, top - 0.5, Math.random()), z + nz * 0.6);
   out.nx = nx; out.nz = nz;
   return out;
@@ -357,36 +345,8 @@ function updateBuildings(dt) {
   const night = S.night;
   for (const seg of SEGS) {
     const m = seg.mesh;
-    if (seg.state === 1) {
-      seg.colT += dt;
-      const p = Math.min(1, seg.colT / seg.colDur), e = p * p;
-      m.scale.y = lerp(1, seg.targetScale, e);
-      m.rotation.x = seg.tiltX + seg.colDir.z * 0.1 * e;
-      m.rotation.z = seg.tiltZ - seg.colDir.x * 0.1 * e;
-      seg.debrisAcc += dt * Math.min(30, 6 + seg.area / 40);
-      while (seg.debrisAcc > 1) {
-        seg.debrisAcc--;
-        randomFacadePoint(seg, fpt);
-        spawnDebris(fpt.x, fpt.y, fpt.z, fpt.nx * rand(1, 6) + seg.colDir.x * rand(0, 5), rand(-2, 4), fpt.nz * rand(1, 6) + seg.colDir.z * rand(0, 5), rand(0.6, 2.4), seg.wallMat.color);
-      }
-      if (Math.random() < dt * 14) {
-        randomFacadePoint(seg, fpt);
-        emitSmoke(fpt.x, seg.b.yGround + rand(0, 6), fpt.z, fpt.nx * rand(3, 9), rand(1, 4), fpt.nz * rand(3, 9), rand(6, 14), 0.62, 0.58, 0.52, rand(4, 8), 0.6);
-      }
-      if (p >= 1) {
-        seg.state = 2;
-        m.rotation.x = seg.tiltX + seg.colDir.z * 0.05;
-        m.rotation.z = seg.tiltZ - seg.colDir.x * 0.05;
-        refreshSeg(seg);
-        for (let i = 0; i < Math.min(26, 6 + seg.area / 60); i++) {
-          const x = seg.cx + rand(-1, 1) * seg.r, z = seg.cz + rand(-1, 1) * seg.r;
-          spawnDebris(x, seg.b.yGround + rand(2, 6), z, rand(-2, 2), 0, rand(-2, 2), rand(1.2, 3.4), seg.wallMat.color);
-        }
-      }
-    } else if (seg.state === 0) {
-      m.rotation.x = seg.tiltX + seg.swayX;
-      m.rotation.z = seg.tiltZ + seg.swayZ;
-    }
+    m.rotation.x = seg.tiltX + seg.swayX;
+    m.rotation.z = seg.tiltZ + seg.swayZ;
     seg.swayX *= Math.exp(-dt * 4); seg.swayZ *= Math.exp(-dt * 4);
     if (seg.wet > 0) seg.wet -= dt;
     if (seg.fire === 1) {
@@ -401,22 +361,20 @@ function updateBuildings(dt) {
       }
       if (seg.burnT > 4 && Math.random() < dt * 6 * big) {
         const x = seg.cx + rand(-0.6, 0.6) * seg.r, z = seg.cz + rand(-0.6, 0.6) * seg.r;
-        const top = seg.state === 2 ? seg.b.yGround + 2 : seg.b.yGround + (seg.b.yTop - seg.b.yGround) * m.scale.y;
-        emitFlame(x, top + 0.5, z, 0, rand(3, 7), 0, rand(4, 8));
+        emitFlame(x, seg.b.yTop + 0.5, z, 0, rand(3, 7), 0, rand(4, 8));
       }
       if (Math.random() < dt * (3 + seg.area / 300) * FX_BUDGET.smoke) {
-        const top = seg.b.yGround + (seg.b.yTop - seg.b.yGround) * m.scale.y;
-        emitSmoke(seg.cx + rand(-0.5, 0.5) * seg.r, top + 2, seg.cz + rand(-0.5, 0.5) * seg.r, S.wind.x * 0.6, rand(5, 9), S.wind.y * 0.6, rand(6, 12), 0.09, 0.085, 0.08, rand(7, 12), 0.75);
+        emitSmoke(seg.cx + rand(-0.5, 0.5) * seg.r, seg.b.yTop + 2, seg.cz + rand(-0.5, 0.5) * seg.r, S.wind.x * 0.6, rand(5, 9), S.wind.y * 0.6, rand(6, 12), 0.09, 0.085, 0.08, rand(7, 12), 0.75);
       }
       seg.soot = Math.min(0.9, seg.soot + dt * 0.02);
-      if (seg.state === 0) damageSeg(seg, dt * (1.0 + big * 1.6), null, 'fire');
+      damageSeg(seg, dt * (1.0 + big * 1.6), null, 'fire');
       if (seg.fuel <= 0) { seg.fire = 2; seg.soot = Math.max(seg.soot, 0.8); seg.powered = 0; refreshSeg(seg); }
       const fl = 0.75 + 0.25 * Math.sin(S.time * 17 + seg.flick) * Math.sin(S.time * 7.3 + seg.flick * 2);
       seg.wallMat.emissive.setRGB(1, 0.42, 0.12);
       seg.wallMat.emissiveIntensity = (1.4 + night * 1.8) * fl * big;
     } else {
       seg.wallMat.emissive.setRGB(1, 1, 1);
-      seg.wallMat.emissiveIntensity = night * 1.35 * seg.powered * (seg.state === 0 ? 1 : 0);
+      seg.wallMat.emissiveIntensity = night * 1.35 * seg.powered;
     }
   }
 }
@@ -443,7 +401,8 @@ function spreadBuildingFire() {
 
 function resetBuildings() {
   for (const seg of SEGS) {
-    Object.assign(seg, { hp: seg.maxHp, state: 0, fire: 0, fuel: 0, burnT: 0, powered: 1, soot: 0, tiltX: 0, tiltZ: 0, swayX: 0, swayZ: 0, colT: 0, wet: 0, tilted: false, quakeDmg: 0 });
+    Object.assign(seg, { hp: seg.maxHp, fire: 0, fuel: 0, burnT: 0, powered: 1, soot: 0, risk: 0, flood: 0, causes: {}, tiltX: 0, tiltZ: 0, swayX: 0, swayZ: 0, wet: 0, tilted: false });
+    seg.b.warned = false;
     seg.mesh.scale.set(1, 1, 1);
     seg.mesh.rotation.set(0, 0, 0);
     seg.wallMat.color.copy(seg.b.tint);

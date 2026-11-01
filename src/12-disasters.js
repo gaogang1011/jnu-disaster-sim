@@ -155,16 +155,15 @@ function startQuake(x, z, P, after) {
 }
 function updateQuakes(dt) {
   let best = null, camK = 0;
-  for (const s of SEGS) if (s.state === 0) { s.qx = 0; s.qz = 0; }
+  for (const s of SEGS) { s.qx = 0; s.qz = 0; }
   for (let qi = QUAKES.length - 1; qi >= 0; qi--) {
     const q = QUAKES[qi];
     q.t += dt;
     const env = smooth(0, 1.2, q.t) * (1 - smooth(q.dur - 2.6, q.dur, q.t)) * (0.78 + 0.22 * Math.sin(q.t * 7.1) * Math.sin(q.t * 2.3));
     if (!best || q.amp * env > best.a) best = { q, a: q.amp * env };
     const front = q.t * 260;
-    const dmgK = 1 + q.P * q.P * 0.55;
+    const dmgK = 1 + q.P * q.P * 0.28;
     for (const s of SEGS) {
-      if (s.state !== 0) continue;
       const d = Math.hypot(s.cx - q.x, s.cz - q.z);
       if (d > front) continue;
       const k = env * Math.exp(-d / q.scale);
@@ -206,7 +205,7 @@ function updateQuakes(dt) {
       if (!q.after && q.P >= 4) later(rand(3, 6), () => startQuake(q.x + rand(-140, 140), q.z + rand(-140, 140), q.P * 0.6, true));
     }
   }
-  for (const s of SEGS) if (s.state === 0 && (s.qx || s.qz)) { s.swayX = s.qx; s.swayZ = s.qz; }
+  for (const s of SEGS) if (s.qx || s.qz) { s.swayX = s.qx; s.swayZ = s.qz; }
   if (best && best.a > 0.005) {
     TERR_U.uQuake.value.set(best.q.x, best.q.z, best.a, best.q.t);
     TERR_U.uQuakeK.value.set(260, 70, best.q.scale * 1.6, 0);
@@ -217,7 +216,7 @@ function updateQuakes(dt) {
 
 function gateLevel() { return H(DATA.P.mainGate[0], DATA.P.mainGate[1]); }
 function tsunamiDepth(P) { return Math.max(1, P * 3.8 - 3.6); }
-function rainDepth(P) { return 0.4 + P * 0.45; }
+function rainDepth(P) { return 0.8 + P * 0.55; }
 function rainRate(P) { return 30 + P * 12; }
 function startTsunami() {
   const P = S.power;
@@ -246,7 +245,11 @@ function startRain() {
 }
 function updateFlood(dt) {
   const F = FLOOD;
-  if (!F.on) { TERR_U.uWater.value.set(-999, -999); return; }
+  if (!F.on) {
+    TERR_U.uWater.value.set(-999, -999);
+    for (const s of SEGS) if (s.flood) { s.flood = 0; refreshSeg(s); }
+    return;
+  }
   F.t += dt;
   if (F.phase === 'rise') {
     F.level = Math.min(F.target, F.level + dt * (0.25 + F.P * 0.05));
@@ -283,8 +286,10 @@ function updateFlood(dt) {
   WATER_U.uCrest.value = F.phase === 'surge' ? F.crest : Math.max(0, WATER_U.uCrest.value - dt * 2);
   TERR_U.uWater.value.set(F.front, F.level);
   for (const s of SEGS) {
-    if (s.cz > F.front) continue;
-    const dep = F.level - s.b.yGround;
+    const dep = s.cz > F.front ? 0 : Math.max(0, F.level - s.b.yGround);
+    const was = s.flood;
+    s.flood = dep;
+    if ((was > 0.1) !== (dep > 0.1) || (was >= 0.5) !== (dep >= 0.5)) refreshSeg(s);
     if (dep <= 0) continue;
     if (s.fire === 1) { s.fire = 0; s.fuel = 0; }
     s.wet = 8;
@@ -358,7 +363,7 @@ function updateTyphoon(dt) {
     Y.roofT = rand(0.3, 1.2) * 30 / ws;
     const s = SEGS[Math.floor(Math.random() * SEGS.length)];
     const id = s.roofIds.find(r => roofBoxData[r] && !roofBoxData[r].gone);
-    if (id !== undefined && s.state === 0) {
+    if (id !== undefined) {
       const r = roofBoxData[id];
       r.gone = true;
       tmpM.makeScale(0, 0, 0); roofBoxes.setMatrixAt(id, tmpM); roofBoxes.instanceMatrix.needsUpdate = true;
@@ -366,7 +371,6 @@ function updateTyphoon(dt) {
     }
   }
   for (const s of SEGS) {
-    if (s.state !== 0) continue;
     const weak = s.b.style === 'house' ? 1.8 : 0.25;
     const e = Math.max(0, ws - 20);
     if (e > 0) damageSeg(s, dt * e * e * 0.012 * weak * k, new V3(S.wind.x, 0, S.wind.y).normalize(), 'wind');
@@ -379,7 +383,7 @@ function updateTyphoon(dt) {
     const a = Math.random() * TAU, r = rand(0, 480);
     let bx = controls.target.x + Math.cos(a) * r, bz = controls.target.z + Math.sin(a) * r;
     let tall = null, th = 0;
-    for (const s of segsNear(bx, bz, 60)) if (s.state === 0 && s.b.yTop > th) { th = s.b.yTop; tall = s; }
+    for (const s of segsNear(bx, bz, 60)) if (s.b.yTop > th) { th = s.b.yTop; tall = s; }
     if (tall && Math.random() < 0.6) { bx = tall.cx; bz = tall.cz; }
     lightningBolt(bx, bz, true);
     if (tall && Math.random() < 0.6) { damageSeg(tall, tall.maxHp * 0.12, null, 'lightning'); if (Math.random() < 0.35 && igniteSeg(tall, true)) logEvent(`${tall.b.name} 낙뢰 화재`, 'fire', tall.b.name); }
@@ -513,7 +517,7 @@ function resetHazards() {
 const DISASTERS = {
   quake: { name: '지진', key: '1', guide: 'quake', shelter: 'open', desc: '클릭한 곳이 진앙입니다. 흔들림이 멈추면 넓은 옥외 공간으로 대피합니다', radius: P => 170 + P * 42, ring2: true, run: (x, z) => startQuake(x, z, S.power), info: P => `규모 ${quakeMagnitude(P).toFixed(1)} · 흔들림 ${Math.round(6 + P * 0.75)}초 · 여진 있음` },
   tsunami: { name: '지진해일', key: '2', guide: 'tsunami', shelter: 'high', desc: '북쪽 바다에서 해일이 밀려오는 가정 시나리오입니다. 고지대로 대피합니다', radius: () => 0, run: () => startTsunami(), info: P => `정문 기준 수위 ${Math.round(tsunamiDepth(P))}m · 파고 ${Math.round(4 + P * 1.3)}m (가정)` },
-  rain: { name: '집중호우', key: '3', guide: 'rain', shelter: 'high', desc: '폭우로 정문 쪽 저지대부터 물이 찹니다. 고지대로 대피합니다', radius: () => 0, run: () => startRain(), info: P => `시간당 ${rainRate(P)}mm · 정문 기준 침수 ${rainDepth(P).toFixed(1)}m` },
+  rain: { name: '집중호우', key: '3', guide: 'rain', shelter: 'high', desc: '폭우로 정문 쪽 저지대부터 물이 찹니다. 고지대로 대피합니다', radius: () => 0, run: () => startRain(), info: P => `시간당 ${rainRate(P)}mm · 저지대 최대 침수 ${rainDepth(P).toFixed(1)}m` },
   typhoon: { name: '태풍', key: '4', guide: 'typhoon', shelter: 'indoor', desc: '강풍과 폭우, 낙뢰가 캠퍼스를 덮칩니다. 튼튼한 건물 안으로 대피합니다', radius: () => 0, run: startTyphoon, info: P => `최대풍속 ${Math.round(typhoonWind(P))}m/s · 기상청 강도 '${typhoonClass(typhoonWind(P))}'` },
   fire: { name: '화재', key: '5', guide: 'fire', shelter: 'open', desc: '불이 바람을 타고 숲과 건물로 번집니다. 불에서 먼 넓은 곳으로 대피합니다', radius: P => 10 + P * 2.4, run: startFire, info: P => `발화 범위 ${Math.round(10 + P * 2.4)}m · 풍속 ${(Math.hypot(2 + P * 0.7, 2.6 + P * 0.8)).toFixed(1)}m/s` },
   volcano: { name: '한라산 분화', key: '6', guide: 'volcano', shelter: 'indoor', desc: '한라산에서 화산탄과 화산재가 날아옵니다. 튼튼한 건물 안으로 대피합니다', radius: P => 140 + P * 22, ring2: true, run: startEruption, info: P => `화산탄 낙하 범위 ${Math.round(140 + P * 22)}m · ${Math.round(34 + P * 2.5)}초` }

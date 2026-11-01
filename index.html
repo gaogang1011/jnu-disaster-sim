@@ -28,6 +28,7 @@
       <div class="grp">
         <button class="tb sw" id="tTrack" aria-pressed="true">추적 카메라</button>
         <button class="tb sw" id="tSlow" aria-pressed="false">슬로 모션</button>
+        <button class="tb sw" id="tRisk" aria-pressed="true">위험도 색상</button>
         <button class="tb sw" id="tRespond" aria-pressed="true">소방 출동</button>
         <button class="tb sw" id="tLabels" aria-pressed="true">이름표</button>
         <button class="tb sw" id="tSound" aria-pressed="true">소리</button>
@@ -64,15 +65,18 @@
       <p id="modeInfo"></p>
     </section>
     <section>
-      <div class="dmg"><span class="lbl2">캠퍼스 피해율</span><span class="big"><span id="sDamage">0</span><small>%</small></span></div>
-      <div class="meter"><i id="sDamageBar"></i></div>
+      <h2>위험 평가 <span class="keys">· 캠퍼스 건물</span></h2>
+      <div class="risk-counts" id="riskCounts">
+        <div class="rc" data-l="0"><span class="n">0</span><span class="t">안전</span></div>
+        <div class="rc" data-l="1"><span class="n">0</span><span class="t">주의</span></div>
+        <div class="rc" data-l="2"><span class="n">0</span><span class="t">경고</span></div>
+        <div class="rc" data-l="3"><span class="n">0</span><span class="t">위험</span></div>
+      </div>
+      <ol class="risk-list" id="riskList"><li class="empty">위험한 건물이 없습니다.</li></ol>
       <dl class="stats">
-        <div class="c"><dt>붕괴 건물</dt><dd id="sCollapsed">0</dd></div>
-        <div><dt>손상 건물</dt><dd id="sDamaged">0</dd></div>
         <div class="f"><dt>화재 건물/수목</dt><dd id="sFire">0</dd></div>
         <div><dt>쓰러진 나무</dt><dd id="sTrees">0</dd></div>
-        <div class="c"><dt>인명 피해</dt><dd id="sPeople">0</dd></div>
-        <div><dt>파손 차량</dt><dd id="sCars">0</dd></div>
+        <div><dt>파손·침수 차량</dt><dd id="sCars">0</dd></div>
       </dl>
     </section>
     <section class="logsec">
