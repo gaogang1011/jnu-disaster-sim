@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>제주대 캠퍼스 재난 시뮬레이터</title>
+<meta name="description" content="제주대학교 아라캠퍼스 실제 건물 배치와 지형 위에서 9가지 재난을 일으키는 3D 웹 시뮬레이터">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app">
+  <div id="view">
+    <div id="labels"></div>
+    <div class="tip" id="tip" hidden>
+      <div class="hd"><span class="bn"></span><span class="st"></span></div>
+      <div class="meta"></div>
+      <div class="bar"><i></i></div>
+    </div>
+    <div class="toolbar" role="toolbar" aria-label="보기 설정">
+      <div class="grp" aria-label="시간대">
+        <button class="tb" data-tod="day" aria-pressed="true">낮</button>
+        <button class="tb" data-tod="dusk" aria-pressed="false">노을</button>
+        <button class="tb" data-tod="night" aria-pressed="false">밤</button>
+      </div>
+      <div class="grp">
+        <button class="tb sw" id="tTrack" aria-pressed="true">추적 카메라</button>
+        <button class="tb sw" id="tSlow" aria-pressed="false">슬로 모션</button>
+        <button class="tb sw" id="tRespond" aria-pressed="true">소방 출동</button>
+        <button class="tb sw" id="tLabels" aria-pressed="true">이름표</button>
+        <button class="tb sw" id="tSound" aria-pressed="true">소리</button>
+      </div>
+      <div class="grp"><button class="tb" id="reset">캠퍼스 복구</button></div>
+    </div>
+    <div class="hint" id="hint"></div>
+    <div class="credit">지도 데이터 © OpenStreetMap 기여자</div>
+    <div class="loader" id="loader">
+      <div class="box">
+        <p class="eyebrow">Jeju National University · Ara Campus</p>
+        <h1>제주대 재난 시뮬레이터</h1>
+        <p>OpenStreetMap 건물 배치와 실제 지형 고도로 아라캠퍼스를 세우는 중입니다.</p>
+        <div class="lb"><i id="loadBar"></i></div>
+        <div class="msg" id="loadMsg">준비 중</div>
+      </div>
+    </div>
+  </div>
+  <aside class="panel">
+    <header>
+      <p class="eyebrow">제주대학교 아라캠퍼스 · 1:1 축척</p>
+      <h1>재난 시뮬레이터</h1>
+      <div class="status"><span class="dot"></span><span id="clock">00:00</span><span id="activeList" data-on="0">평상시</span></div>
+    </header>
+    <section>
+      <h2>재난 선택 <span class="keys">· 숫자키 1–9</span></h2>
+      <div class="modes" id="modes"></div>
+      <p class="desc" id="modeDesc"></p>
+    </section>
+    <section>
+      <div class="pw-row"><label for="power">강도</label><output id="powerOut" for="power">5</output></div>
+      <input type="range" id="power" min="1" max="10" value="5">
+      <div class="scale"><span>약</span><span>강</span></div>
+      <p id="modeInfo"></p>
+    </section>
+    <section>
+      <div class="dmg"><span class="lbl2">캠퍼스 피해율</span><span class="big"><span id="sDamage">0</span><small>%</small></span></div>
+      <div class="meter"><i id="sDamageBar"></i></div>
+      <dl class="stats">
+        <div class="c"><dt>붕괴 건물</dt><dd id="sCollapsed">0</dd></div>
+        <div><dt>손상 건물</dt><dd id="sDamaged">0</dd></div>
+        <div class="f"><dt>화재 건물/수목</dt><dd id="sFire">0</dd></div>
+        <div><dt>쓰러진 나무</dt><dd id="sTrees">0</dd></div>
+        <div class="c"><dt>인명 피해</dt><dd id="sPeople">0</dd></div>
+        <div><dt>파손 차량</dt><dd id="sCars">0</dd></div>
+      </dl>
+    </section>
+    <section class="logsec">
+      <h2>상황 기록</h2>
+      <ol id="log"><li class="empty">재난을 고르고 지도를 클릭하세요.</li></ol>
+    </section>
+  </aside>
+</div>
+
+<script src="vendor/three/three.min.js"></script>
+<script src="vendor/three/OrbitControls.js"></script>
+<script src="vendor/three/CopyShader.js"></script>
+<script src="vendor/three/LuminosityHighPassShader.js"></script>
+<script src="vendor/three/EffectComposer.js"></script>
+<script src="vendor/three/RenderPass.js"></script>
+<script src="vendor/three/ShaderPass.js"></script>
+<script src="vendor/three/UnrealBloomPass.js"></script>
+<script>
+(function () {
+  var msg = function (t) { var m = document.getElementById('loadMsg'); if (m) m.textContent = t; };
+  var c = document.createElement('canvas');
+  var gl = window.WebGLRenderingContext && (c.getContext('webgl2') || c.getContext('webgl'));
+  if (!gl) { window.__noWebGL = true; msg('이 브라우저에서 WebGL을 쓸 수 없습니다. 크롬·엣지 최신 버전에서 하드웨어 가속을 켜고 다시 여세요.'); }
+  else if (typeof THREE === 'undefined') msg('vendor/three 폴더를 불러오지 못했습니다. 저장소 전체를 받았는지 확인하세요.');
+  window.addEventListener('error', function (e) {
+    if (window.__noWebGL || document.body.dataset.ready) return;
+    msg('실행 오류: ' + (e.message || e) + ' (README의 문제 해결 항목 참고)');
+  });
+})();
+</script>
+<script src="src/00-data.js"></script>
+<script src="src/01-util.js"></script>
+<script src="src/02-core.js"></script>
+<script src="src/03-terrain.js"></script>
+<script src="src/04-buildings.js"></script>
+<script src="src/05-vegetation.js"></script>
+<script src="src/06-particles.js"></script>
+<script src="src/07-debris.js"></script>
+<script src="src/08-agents.js"></script>
+<script src="src/09-sound.js"></script>
+<script src="src/10-environment.js"></script>
+<script src="src/11-disasters.js"></script>
+<script src="src/12-main.js"></script>
+</body>
+</html>
