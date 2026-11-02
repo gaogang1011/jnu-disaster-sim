@@ -85,8 +85,8 @@ for (const c of CASES) {
     for (let i = 0; i < s.EVAC.n; i++) if (s.A.st[i] === s.EV.DONE) kinds.push(...s.EVAC.shelters[s.A.shelter[i]].kinds);
     return { log: s.LOG.map(l => l.msg), kind: s.EVAC.kind, m, risky, flooded, burning, kinds };
   });
-  const parts = [`로그 "${c.expect}"`, `대피 방식 ${st.kind}`, `이동·도착 ${st.m.moving + st.m.done}/${st.m.total}`];
-  let ok = st.log.some(m => m.includes(c.expect)) && st.kind === c.kind && st.m.moving + st.m.done > 0;
+  const parts = [`로그 "${c.expect}"`, `대피 방식 ${st.kind}`, `이동·도착 ${st.m.moving + st.m.done}/${st.m.total}`, '119 출동'];
+  let ok = st.log.some(m => m.includes(c.expect)) && st.log.some(m => m.includes('119 신고 접수')) && st.kind === c.kind && st.m.moving + st.m.done > 0;
   if (c.risk) { ok = ok && st.risky > 0; parts.push(`위험 건물 ${st.risky}`); }
   if (c.flood) { ok = ok && st.flooded > 0; parts.push(`침수 구역 ${st.flooded}`); }
   if (c.burning) { ok = ok && st.burning > 0; parts.push(`화재 구역 ${st.burning}`); }
@@ -126,7 +126,7 @@ const rs = await page.evaluate(() => {
   const t0 = s.S.time;
   for (let k = 0; k < 900; k++) {
     s.S.time += 0.1;
-    updateHazards(0.1); updateBuildings(0.1); updateEvacuation(0.1); updateRescue(0.1);
+    updateHazards(0.1); updateBuildings(0.1); updateAgents(0.1); updateEvacuation(0.1); updateRescue(0.1);
     if (s.RESCUE.teams.some(t => t.state === 'toShelter')) break;
   }
   const m = s.evacMetrics();
@@ -139,6 +139,54 @@ const rs = await page.evaluate(() => {
 check('고립자 기록과 구조대 구조', rs.log && rs.arrived && rs.ever > 0 && rs.rescued > 0, `고립 경험 ${rs.ever}명, 구조 ${rs.rescued}명, 평균 구조 대기 ${rs.wait}초 (재난 후 ${Math.round(rs.t / 60)}분)`);
 await page.waitForTimeout(1500);
 if (takeShots) await shot('rescue');
+
+const stepRun = (mode, power, respond, steps) => page.evaluate(([mode, power, respond, steps]) => {
+  const s = window.__sim;
+  s.resetAll();
+  s.S.respond = respond;
+  s.S.power = power;
+  s.setMode(mode);
+  const b = s.BLD.find(q => q.name === '학생회관');
+  s.DISASTERS[mode].run(b.cx, b.cz);
+  let inside = 0;
+  for (let k = 0; k < steps; k++) {
+    s.S.time += 0.1;
+    updateHazards(0.1); updateBuildings(0.1); updateAgents(0.1); updateEvacuation(0.1); updateRescue(0.1);
+  }
+  for (let i = 0; i < s.EVAC.n; i++) if (s.A.bld[i] >= 0 && s.A.trapChk[i] && s.A.everStuck[i] && (s.A.why[i] === 3 || s.A.rescued[i])) inside++;
+  const m = s.evacMetrics();
+  const out = { inside, stuck: m.stuck, why3: m.why[3], rescued: m.rescued, fireOut: m.fireOut, treeOut: m.treeOut, checks: m.checks, arrived: s.RESCUE.arrived,
+    searching: s.RESCUE.teams.some(t => t.state === 'working' && t.target >= 0 && s.A.why[t.target] === 3) };
+  s.S.respond = true;
+  return out;
+}, [mode, power, respond, steps]);
+
+const fire = await stepRun('fire', 7, true, 600);
+check('화재: 소방차 도착 후 진압', fire.arrived && fire.fireOut + fire.treeOut > 0, `건물 ${fire.fireOut}곳, 수목 ${fire.treeOut}그루 진압`);
+
+const qOn = await stepRun('quake', 9, true, 1000);
+const qOff = await stepRun('quake', 9, false, 1000);
+check('지진: 건물 안 갇힘과 구조대 수색·구조', qOn.inside > 0 && qOn.rescued > 0 && qOn.arrived, `갇힘 ${qOn.inside}명 중 구조 ${qOn.rescued}명, 진압 ${qOn.fireOut}곳, 점검 ${qOn.checks}동`);
+check('출동을 끄면 구조·진압 없음', !qOff.arrived && qOff.rescued === 0 && qOff.fireOut === 0 && qOff.why3 > 0, `건물 안 고립 ${qOff.why3}명 남음`);
+
+await page.evaluate(() => {
+  const s = window.__sim;
+  s.resetAll(); s.S.power = 9; s.setMode('quake');
+  const b = s.BLD.find(q => q.name === '학생회관');
+  s.DISASTERS.quake.run(b.cx, b.cz);
+  let team = null;
+  for (let k = 0; k < 1000 && !team; k++) {
+    s.S.time += 0.1;
+    updateHazards(0.1); updateBuildings(0.1); updateAgents(0.1); updateEvacuation(0.1); updateRescue(0.1);
+    team = s.RESCUE.teams.find(t => t.state === 'working' && t.target >= 0 && s.A.why[t.target] === 3);
+  }
+  team = team || s.RESCUE.teams[0];
+  camRelease();
+  s.controls.target.set(team.x, team.y, team.z);
+  s.camera.position.set(team.x + 130, team.y + 140, team.z - 180);
+});
+await page.waitForTimeout(1500);
+if (takeShots) await shot('response');
 
 await page.click('.preset[data-k="1"]');
 await page.waitForTimeout(800);

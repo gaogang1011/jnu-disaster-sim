@@ -36,11 +36,11 @@ description: 제주대 재난 대피 시뮬레이터(three.js 웹앱)를 실행�
 | 05-vegetation | 수목 `T`, `tipTree`, `igniteTree`, 산불 확산, 가로등 |
 | 06-particles | 불꽃·연기 파티클, `shockwave`, `fireball`, `dustRing` |
 | 07-debris | `spawnDebris` |
-| 08-agents | 차량·소방차, `addThreat`(차량이 피하는 위험 지점) |
+| 08-agents | 차량, 소방차 `updateTrucks`(119 도착 뒤 출동, 건물·수목 진압, `RESCUE.fireOut`), `addThreat` |
 | 09-sound | `sfx` 절차적 사운드 |
 | 10-environment | 물(`FLOOD`, 물 셰이더), 비, 번개, 화산 분연 |
-| 11-evacuation | 대피자 `A`, `EVAC`, `evacBegin(id)`, 경로 비용, 대피소 개폐, 고립 기록 `setStuck`/`clearStuck`, 지표 `evacMetrics()` |
-| 11-rescue | 119 구조대 `RESCUE`, 출동·구조·이송 `updateRescue(dt)`, `rescueBusy()` |
+| 11-evacuation | 대피자 `A`(출발 건물 `A.bld`), `EVAC`, `evacBegin(id)`(119 신고 포함), 경로 비용, 대피소 개폐, 고립 기록 `setStuck`/`clearStuck`, 건물 안 갇힘 `trapInside`, 지표 `evacMetrics()` |
+| 11-rescue | 119 `RESCUE`(신고·도착·출입구), 구조대 구조·수색·이송·안전 점검 `updateRescue(dt)`, `rescueBusy()` |
 | 12-disasters | 재난 6종과 등록표 `DISASTERS` (각 `run`이 자동으로 `evacBegin` 호출) |
 | 13-main | 패널(시나리오·대피 현황·대피소·행동요령·위험 평가·실행 기록), 입력, 카메라, 메인 루프 |
 
@@ -61,9 +61,10 @@ description: 제주대 재난 대피 시뮬레이터(three.js 웹앱)를 실행�
 - 경로 탐색은 대피소 쪽에서 한 번만 도는 다익스트라다. 사람마다 탐색하지 않는다. 사람은 `route.next`를 따라가기만 한다.
 - 재탐색 주기는 `EV_REROUTE`(1.5초). 매 프레임 탐색하지 않는다.
 - 이동 루프에는 반복 상한(64)이 있다. 지우지 않는다.
-- 고립 상태는 반드시 `setStuck(i, 이유)`와 `clearStuck(i)`로만 바꾼다. 직접 `A.st[i] = EV.STUCK`을 쓰면 고립 경험·고립 시간 기록이 빠진다. 이유 1은 물, 2는 갈 수 있는 대피소 없음.
+- 고립 상태는 반드시 `setStuck(i, 이유)`와 `clearStuck(i)`로만 바꾼다. 직접 `A.st[i] = EV.STUCK`을 쓰면 고립 경험·고립 시간 기록이 빠진다. 이유 1은 물, 2는 갈 수 있는 대피소 없음, 3은 건물 안 갇힘(`EV_WHY`). 이유 3은 스스로 풀리지 않으므로 `reroute`·물 검사에서 풀지 않는다.
 - 사람이 사망하는 상태는 만들지 않는다. 위험은 고립·위험 노출·구조 지표로 나타낸다.
-- 구조대 상수(`RESCUE_TEAMS`, `RESCUE_DELAY`, `RESCUE_SPEED`, `RESCUE_WORK`, `RESCUE_CAP`, `RESCUE_PICK_R`)를 바꾸면 README "고립과 구조" 절을 함께 고친다. 테스트에서는 `RESCUE.delay`로 출동 시간을 바꿀 수 있다.
+- 119는 모든 재난에서 `evacBegin`이 `callRescue()`로 신고한다. 소방차도 `RESCUE.arrived` 뒤에만 나온다. 새 재난을 추가하면 그 재난에서 구조대·소방차가 할 일이 있는지 README "고립과 119 대응" 표에 적는다.
+- 구조대 상수(`RESCUE_TEAMS`, `RESCUE_DELAY`, `RESCUE_SPEED`, `RESCUE_WORK`, `RESCUE_SEARCH`, `RESCUE_CHECK`, `RESCUE_CAP`, `RESCUE_PICK_R`)나 `EV_TRAP_P`를 바꾸면 README "고립과 119 대응" 절을 함께 고친다. 테스트에서는 `RESCUE.delay`로 출동 시간을 바꿀 수 있다.
 - 지표 정의(완료율, 고립, 위험 노출, 시간 환산)를 바꾸면 README "결과 지표" 절도 함께 고친다.
 
 ## 실행과 검증
@@ -71,7 +72,7 @@ description: 제주대 재난 대피 시뮬레이터(three.js 웹앱)를 실행�
 ```bash
 npm test             # 데이터·경로·구조 테스트 (의존성 없음, 1초 이내)
 npm start            # http://localhost:8080
-npm run test:e2e     # 헤드리스 크롬: 로드·클릭·재난 6종·대피소 끄기·기록표·고립과 구조·시나리오·초기화·오류
+npm run test:e2e     # 헤드리스 크롬: 로드·클릭·재난 6종(119 출동 포함)·대피소 끄기·기록표·고립과 구조·화재 진압·건물 안 갇힘·출동 끔·시나리오·초기화·오류
 npm run screenshots  # 같은 흐름으로 docs/screenshots 갱신
 npm run bundle       # dist/jnu-disaster-sim.html 단일 파일
 ```
@@ -79,7 +80,7 @@ npm run bundle       # dist/jnu-disaster-sim.html 단일 파일
 - E2E는 `npm install`과 `npx playwright install chromium`이 필요하다. 테스트는 `index.html?test&quality=low`로 열고 `window.__sim`으로 상태를 읽는다. `?test`가 없으면 내부 객체는 노출되지 않는다.
 - 완료를 보고하기 전에 `npm test`와 `npm run test:e2e`가 통과해야 한다. E2E를 돌릴 수 없으면 `node --check src/*.js`라도 실행하고, 브라우저 확인을 못 했다고 밝힌다.
 - 페이지 오류는 테스트 마지막에만 모아 보면 원인을 놓친다. 멈춘 것처럼 보이면 `pageerror`를 즉시 출력해 확인한다.
-- 긴 시나리오(구조처럼 수십 초 이상)는 렌더링 없이 `updateHazards`·`updateBuildings`·`updateEvacuation`·`updateRescue`를 `page.evaluate` 안에서 직접 반복 호출해 검사한다. 함수 선언은 전역이라 `window`에서 바로 부를 수 있다. 그래픽 카드가 없는 환경에서는 화면 1초를 그리는 데 수십 초가 걸린다.
+- 긴 시나리오(구조처럼 수십 초 이상)는 렌더링 없이 `updateHazards`·`updateBuildings`·`updateAgents`(소방차)·`updateEvacuation`·`updateRescue`를 `page.evaluate` 안에서 직접 반복 호출해 검사한다. 함수 선언은 전역이라 `window`에서 바로 부를 수 있다. 그래픽 카드가 없는 환경에서는 화면 1초를 그리는 데 수십 초가 걸린다.
 - 화면이 바뀌는 변경은 `npm run screenshots` 결과를 직접 열어 본다.
 
 ## 커밋 규칙
