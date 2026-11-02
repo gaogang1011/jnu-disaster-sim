@@ -292,6 +292,7 @@ function updateEvacPanel() {
   ui.evMoving.textContent = m.moving + m.wait;
   ui.evDone.textContent = m.done;
   ui.evStuck.textContent = m.stuck;
+  ui.evStuck.parentElement.title = m.stuck ? EV_WHY.slice(1).map((w, k) => `${w} ${m.why[k + 1]}명`).join(' · ') : '';
   ui.evExposed.textContent = m.exposed;
   ui.evAvg.textContent = fmtReal(m.avg);
   ui.evMax.textContent = fmtReal(m.max);

@@ -3,6 +3,8 @@ const EV_WALK = 1.4;
 const EV_N = IS_MOBILE ? 180 : 320;
 const EV_LIMIT = 180;
 const EV_REROUTE = 1.5;
+const EV_TRAP_P = 0.2;
+const EV_WHY = ['', '물', '길 막힘', '건물 안'];
 const EV = { IDLE: 0, WAIT: 1, MOVE: 2, DONE: 3, STUCK: 4, CARRIED: 5 };
 const EV_STATE_COL = [null, C('#8fb3d9'), C('#ffc533'), C('#3fd07f'), C('#ff4b3a'), C('#5fd0ff')];
 const EV_IDLE_DOT = C('#e6eef2');
@@ -11,7 +13,7 @@ const FIRE_CELL = 10, FIRE_N = Math.ceil(1700 / FIRE_CELL);
 
 const EVAC = {
   graph: null, nh: null, edgeH: null, edgeSegs: null, route: null, cost: null, occ: null, flow: null, cap: null,
-  shelters: [], active: false, kindId: null, kind: null, run: null, results: [], routeT: 0, flowT: 0,
+  shelters: [], trapB: new Set(), active: false, kindId: null, kind: null, run: null, results: [], routeT: 0, flowT: 0,
   fireNear: new Uint8Array(FIRE_N * FIRE_N), firePts: [], n: 0
 };
 const A = {};
@@ -106,6 +108,7 @@ function placeEvacuees() {
   A.st = new Uint8Array(n); A.exposed = new Uint8Array(n); A.final = new Uint8Array(n); A.why = new Uint8Array(n);
   A.everStuck = new Uint8Array(n); A.stuckSince = new Float32Array(n); A.stuckT = new Float32Array(n);
   A.rescued = new Uint8Array(n); A.rescueWait = new Float32Array(n); A.rescuer = new Int32Array(n).fill(-1);
+  A.bld = new Int32Array(n).fill(-1); A.trapChk = new Uint8Array(n);
   A.col = [];
   const blds = BLD.filter(b => b.style !== 'house' && pointInPoly(b.cx, b.cz, DATA.campus));
   const total = blds.reduce((s, b) => s + b.area, 0);
@@ -114,7 +117,7 @@ function placeEvacuees() {
   for (let i = 0; i < g.n; i++) if (pointInPoly(g.x[i], g.z[i], DATA.campus)) campusNodes.push(i);
   let i = 0, guard = 0;
   while (i < n && guard++ < n * 40) {
-    let x, z;
+    let x, z, home = -1;
     if (r() < 0.85) {
       let pick = r() * total, b = blds[0];
       for (const q of blds) { pick -= q.area; if (pick <= 0) { b = q; break; } }
@@ -124,12 +127,14 @@ function placeEvacuees() {
       const l = Math.hypot(nx, nz) || 1; nx /= l; nz /= l;
       if (pointInPoly(x + nx, z + nz, p)) { nx = -nx; nz = -nz; }
       x += nx * 2.5; z += nz * 2.5;
+      home = BLD.indexOf(b);
     } else {
       const v = campusNodes[Math.floor(r() * campusNodes.length)];
       x = g.x[v] + (r() - 0.5) * 6; z = g.z[v] + (r() - 0.5) * 6;
     }
     if (classAt(x, z) === CLS.building || classAt(x, z) === CLS.water) continue;
     A.hx[i] = A.x[i] = x; A.hz[i] = A.z[i] = z; A.y[i] = H(x, z);
+    A.bld[i] = home;
     A.spd[i] = 0.82 + r() * 0.36;
     A.bob[i] = r() * TAU;
     A.col.push(EV_CLOTHES[Math.floor(r() * EV_CLOTHES.length)]);
@@ -349,9 +354,10 @@ function evacBegin(id) {
     A.st[i] = EV.WAIT;
     A.delay[i] = rand(0.5, 3.5);
     A.exposed[i] = 0; A.final[i] = 0; A.why[i] = 0; A.shelter[i] = -1; A.node[i] = -1; A.edge[i] = -1; A.tEnd[i] = 0;
-    A.everStuck[i] = 0; A.stuckT[i] = 0; A.rescued[i] = 0; A.rescueWait[i] = 0; A.rescuer[i] = -1;
+    A.everStuck[i] = 0; A.stuckT[i] = 0; A.rescued[i] = 0; A.rescueWait[i] = 0; A.rescuer[i] = -1; A.trapChk[i] = 0;
     drawPerson(i, true);
   }
+  EVAC.trapB.clear();
   resetRescue();
   evMesh.instanceColor.needsUpdate = true;
   EVAC.routeT = 0;
@@ -374,13 +380,14 @@ function finishRun(status) {
 }
 
 function evacMetrics() {
+  const why = [0, 0, 0, 0];
   let done = 0, moving = 0, stuck = 0, exposed = 0, wait = 0, sum = 0, max = 0, ever = 0, stuckSum = 0, carried = 0, rescued = 0, rescueSum = 0;
   const start = EVAC.run ? EVAC.run.start : S.time;
   for (let i = 0; i < EVAC.n; i++) {
     const st = A.st[i];
     if (st === EV.DONE) { done++; const t = (A.tEnd[i] - start) * EV_K; sum += t; if (t > max) max = t; }
     else if (st === EV.MOVE) moving++;
-    else if (st === EV.STUCK) stuck++;
+    else if (st === EV.STUCK) { stuck++; why[A.why[i]]++; }
     else if (st === EV.WAIT) wait++;
     else if (st === EV.CARRIED) carried++;
     if (A.exposed[i]) exposed++;
@@ -388,10 +395,28 @@ function evacMetrics() {
     if (A.everStuck[i]) { ever++; stuckSum += A.stuckT[i] + (st === EV.STUCK ? S.time - A.stuckSince[i] : 0); }
   }
   return {
-    total: EVAC.n, done, moving, stuck, wait, exposed, ever, stuckAvg: ever ? stuckSum / ever * EV_K : 0,
+    total: EVAC.n, done, moving, stuck, why, wait, exposed, ever, stuckAvg: ever ? stuckSum / ever * EV_K : 0,
     carried, rescued, rescueAvg: rescued ? rescueSum / rescued * EV_K : 0, fireOut: RESCUE.fireOut, treeOut: RESCUE.treeOut, checks: RESCUE.checks,
     pct: EVAC.n ? done / EVAC.n * 100 : 0, avg: done ? sum / done : 0, max, elapsed: (S.time - start) * EV_K
   };
+}
+
+function unsafeHomes() {
+  let any = false;
+  for (let i = 0; i < EVAC.n; i++) if (A.st[i] === EV.WAIT && A.bld[i] >= 0 && !A.trapChk[i]) { any = true; break; }
+  if (!any) return null;
+  const out = new Set();
+  BLD.forEach((b, k) => { const info = buildingInfo(b); if (info.risk >= 3 || info.burning) out.add(k); });
+  return out.size ? out : null;
+}
+
+function trapInside(i) {
+  setStuck(i, 3);
+  const b = BLD[A.bld[i]];
+  if (!EVAC.trapB.has(b)) {
+    EVAC.trapB.add(b);
+    logEvent(`${b.name} · 건물 안에 갇힌 사람 발생, 구조 필요`, 'warn', b.name);
+  }
 }
 
 function fmtReal(sec) {
@@ -413,10 +438,15 @@ function updateEvacuation(dt) {
   occ.fill(0);
   for (let i = 0; i < EVAC.n; i++) if (A.st[i] === EV.MOVE && A.edge[i] >= 0) occ[A.edge[i]]++;
   const shaking = EVAC.kindId === 'quake' && quakeShaking();
+  const unsafe = unsafeHomes();
   let colorDirty = false;
   for (let i = 0; i < EVAC.n; i++) {
     const st = A.st[i];
     if (st === EV.WAIT) {
+      if (unsafe && A.bld[i] >= 0 && !A.trapChk[i] && unsafe.has(A.bld[i])) {
+        A.trapChk[i] = 1;
+        if (Math.random() < EV_TRAP_P) { trapInside(i); colorDirty = true; drawPerson(i, true); continue; }
+      }
       if (!shaking) A.delay[i] -= dt;
       if (A.delay[i] <= 0) { A.st[i] = EV.MOVE; enterGraph(i); colorDirty = true; }
     } else if (st === EV.MOVE) {
@@ -507,9 +537,10 @@ function resetEvacuation() {
   for (let i = 0; i < EVAC.n; i++) {
     A.x[i] = A.hx[i]; A.z[i] = A.hz[i]; A.y[i] = H(A.x[i], A.z[i]);
     A.st[i] = EV.IDLE; A.exposed[i] = 0; A.final[i] = 0; A.node[i] = -1; A.edge[i] = -1; A.shelter[i] = -1;
-    A.everStuck[i] = 0; A.stuckT[i] = 0; A.why[i] = 0; A.rescued[i] = 0; A.rescueWait[i] = 0; A.rescuer[i] = -1;
+    A.everStuck[i] = 0; A.stuckT[i] = 0; A.why[i] = 0; A.rescued[i] = 0; A.rescueWait[i] = 0; A.rescuer[i] = -1; A.trapChk[i] = 0;
     drawPerson(i, true);
   }
+  EVAC.trapB.clear();
   evMesh.instanceMatrix.needsUpdate = true;
   evMesh.instanceColor.needsUpdate = true;
   if (evLines) evLines.visible = false;

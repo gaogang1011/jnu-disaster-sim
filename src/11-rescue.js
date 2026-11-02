@@ -5,6 +5,7 @@ const RESCUE_WORK = 6;
 const RESCUE_CAP = 6;
 const RESCUE_PICK_R = 30;
 const RESCUE_CHECK = 6;
+const RESCUE_SEARCH = 12;
 const RESCUE = { called: false, callT: 0, arrived: false, teams: [], base: null, delay: RESCUE_DELAY, fireOut: 0, treeOut: 0, checks: 0, checked: new Set() };
 
 const rescueBodyGeo = mergeGeos([
@@ -166,7 +167,7 @@ function updateRescue(dt) {
       const i = t.target;
       if (A.st[i] !== EV.STUCK) { A.rescuer[i] = -1; t.target = -1; t.state = 'idle'; continue; }
       t.tx = A.x[i]; t.tz = A.z[i];
-      if (moveTeam(t, dt)) { t.state = 'working'; t.workT = RESCUE_WORK; }
+      if (moveTeam(t, dt)) { t.state = 'working'; t.workT = A.why[i] === 3 ? RESCUE_SEARCH : RESCUE_WORK; }
     } else if (t.state === 'working') {
       t.workT -= dt;
       if (t.workT <= 0) pickUp(t);
@@ -245,7 +246,7 @@ function updateRescueLabels(w, h, proj) {
     proj.set(t.x, t.y + 12, t.z).project(camera);
     if (proj.z > 1 || Math.abs(proj.x) > 1.05 || Math.abs(proj.y) > 1.05) { t.el.hidden = true; continue; }
     t.el.hidden = false;
-    const what = { idle: '대기', standby: '대기', toVictim: '고립자에게 이동', working: '구조 중', toCheck: '위험 건물로 이동', checking: '안전 점검 중', toShelter: `${t.carry.length}명 이송 중` }[t.state];
+    const what = { idle: '대기', standby: '대기', toVictim: '고립자에게 이동', working: t.target >= 0 && A.why[t.target] === 3 ? '건물 수색 중' : '구조 중', toCheck: '위험 건물로 이동', checking: '안전 점검 중', toShelter: `${t.carry.length}명 이송 중` }[t.state];
     const txt = `구조대 ${t.k + 1}팀 · ${what}`;
     if (t.el.textContent !== txt) t.el.textContent = txt;
     t.el.style.transform = `translate(${((proj.x + 1) / 2) * w}px, ${((1 - proj.y) / 2) * h}px) translate(-50%, -100%)`;
