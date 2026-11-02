@@ -161,6 +161,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .lbl[data-s="위험"]{border-color:var(--crit);color:#ff9a8d}
 .stats .g dd{color:var(--ok)}
 .note{margin:10px 0 0;font-size:11.5px;line-height:1.5;color:var(--muted)}
+.note.resp{margin-top:4px;color:#ffb27a}.note.resp:empty{display:none}
 .legend{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:8px;font-size:11px;color:var(--muted)}
 .legend span{display:inline-flex;align-items:center;gap:5px}
 .legend .d{width:8px;height:8px;border-radius:50%;display:inline-block}

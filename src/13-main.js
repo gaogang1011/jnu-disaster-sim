@@ -5,7 +5,7 @@ const ui = {
   sFire: $('#sFire'), sTrees: $('#sTrees'), sCars: $('#sCars'), riskCounts: $('#riskCounts'), riskList: $('#riskList'),
   clock: $('#clock'), active: $('#activeList'),
   evKind: $('#evKind'), evPct: $('#evPct'), evBar: $('#evBar'), evMoving: $('#evMoving'), evDone: $('#evDone'), evStuck: $('#evStuck'),
-  evExposed: $('#evExposed'), evAvg: $('#evAvg'), evMax: $('#evMax'), evEver: $('#evEver'), evStuckT: $('#evStuckT'), evRescued: $('#evRescued'), evNote: $('#evNote'), shelterList: $('#shelterList'),
+  evExposed: $('#evExposed'), evAvg: $('#evAvg'), evMax: $('#evMax'), evEver: $('#evEver'), evStuckT: $('#evStuckT'), evRescued: $('#evRescued'), evNote: $('#evNote'), evResp: $('#evResp'), shelterList: $('#shelterList'),
   presets: $('#presets'), guide: $('#guide'), results: $('#results tbody')
 };
 
@@ -281,6 +281,7 @@ function updateEvacPanel() {
     for (const k of ['evMoving', 'evDone', 'evStuck', 'evExposed', 'evEver', 'evRescued']) ui[k].textContent = '0';
     ui.evAvg.textContent = ui.evMax.textContent = ui.evStuckT.textContent = '-';
     ui.evNote.textContent = `표본 ${EVAC.n}명 · 재난을 실행하면 대피가 시작됩니다 · 화면 1초 = 실제 ${EV_K}초`;
+    ui.evResp.textContent = S.respond ? '119: 재난이 나면 바로 신고되고 소방차·구조대가 출동합니다' : '119: 출동 꺼짐';
     return;
   }
   const m = evacMetrics();
@@ -299,10 +300,19 @@ function updateEvacPanel() {
   ui.evRescued.textContent = m.rescued + (m.carried ? ` (+${m.carried})` : '');
   const shaking = EVAC.kindId === 'quake' && quakeShaking();
   const last = EVAC.results[EVAC.results.length - 1];
-  const rescueNote = !RESCUE.called ? '' : !RESCUE.arrived ? ` · 구조대 출동 중 (도착까지 ${fmtReal((RESCUE.callT + RESCUE.delay - S.time) * EV_K)})` : m.rescued ? ` · 구조 ${m.rescued}명, 평균 구조 대기 ${fmtReal(m.rescueAvg)}` : ' · 구조대 현장 활동 중';
-  ui.evNote.textContent = (run.done && last ? `대피 ${last.status} · 재난 발생부터 ${fmtReal(last.elapsed)} (실제 시간 환산)` :
-    shaking ? '흔들리는 동안 제자리에서 몸을 보호하는 중입니다' : `재난 발생부터 ${fmtReal(m.elapsed)} 경과 (실제 시간 환산, 화면 1초 = ${EV_K}초)`) + rescueNote;
+  ui.evNote.textContent = run.done && last ? `대피 ${last.status} · 재난 발생부터 ${fmtReal(last.elapsed)} (실제 시간 환산)` :
+    shaking ? '흔들리는 동안 제자리에서 몸을 보호하는 중입니다' : `재난 발생부터 ${fmtReal(m.elapsed)} 경과 (실제 시간 환산, 화면 1초 = ${EV_K}초)`;
+  ui.evResp.textContent = respondText(m);
   renderShelterCounts();
+}
+
+function respondText(m) {
+  if (!S.respond) return '119: 출동 꺼짐 · 구조·진압 없이 진행합니다';
+  if (!RESCUE.called) return '';
+  if (!RESCUE.arrived) return `119 출동 중 · 소방차·구조대 도착까지 ${fmtReal(Math.max(0, RESCUE.callT + RESCUE.delay - S.time) * EV_K)}`;
+  const gate = RESCUE.base && RESCUE.base[1] === DATA.P.backGate[1] ? '후문' : '정문';
+  return `119 현장 활동 (${gate}) · 소방차 ${TRUCKS.length}대, 건물 화재 진압 ${m.fireOut}곳${m.treeOut ? `·수목 ${m.treeOut}그루` : ''} · 구조 ${m.rescued}명`
+    + (m.rescued ? `(평균 대기 ${fmtReal(m.rescueAvg)})` : '') + ` · 안전 점검 ${m.checks}동`;
 }
 
 function renderShelterList() {
@@ -347,7 +357,7 @@ function renderResults() {
   const rows = EVAC.results;
   if (!rows.length) return;
   ui.results.innerHTML = rows.map((r, k) => `<tr title="${esc(r.info)} · ${esc(r.status)}"><td>${k + 1}</td><td>${esc(r.name)} ${r.power}</td><td>${r.shelters}곳</td>`
-    + `<td>${Math.round(r.pct)}%</td><td>${fmtShort(r.avg)}</td><td>${fmtShort(r.max)}</td><td class="${r.stuck ? 'bad' : ''}">${r.stuck}</td><td>${r.ever}</td><td>${r.rescued}</td><td>${r.exposed}</td></tr>`).join('');
+    + `<td>${Math.round(r.pct)}%</td><td>${fmtShort(r.avg)}</td><td>${fmtShort(r.max)}</td><td class="${r.stuck ? 'bad' : ''}">${r.stuck}</td><td>${r.ever}</td><td>${r.rescued}</td><td>${r.fireOut}</td><td>${r.exposed}</td></tr>`).join('');
 }
 function fmtShort(sec) {
   if (!(sec > 0)) return '-';
@@ -466,4 +476,4 @@ setMode('quake');
 resize();
 boot(0);
 if (TEST_MODE) window.__evacStep = updateEvacuation;
-if (TEST_MODE) window.__sim = { PRESETS, runPreset, finishRun, RESCUE, PROJ, VOLC, TYPH, LOG, SEGS, BLD, scene, camera, controls, renderer, FACADES, S, DISASTERS, T, CARS, EVAC, A, EV, evacMetrics, buildingInfo, setMode, H, TERR_U, FLOOD, setTOD, resetAll, camFly };
+if (TEST_MODE) window.__sim = { TRUCKS, PRESETS, runPreset, finishRun, RESCUE, PROJ, VOLC, TYPH, LOG, SEGS, BLD, scene, camera, controls, renderer, FACADES, S, DISASTERS, T, CARS, EVAC, A, EV, evacMetrics, buildingInfo, setMode, H, TERR_U, FLOOD, setTOD, resetAll, camFly };

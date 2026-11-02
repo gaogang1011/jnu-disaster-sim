@@ -90,10 +90,9 @@ const truckGeo = mergeGeos([
   new THREE.BoxGeometry(2.2, 1.6, 2.4).translate(0, 1.5, -3)
 ]);
 const truckMat = new THREE.MeshStandardMaterial({ color: C('#c62f24'), roughness: 0.45, metalness: 0.35 });
-let fireFightActive = false;
 function spawnTruck(targetSeg) {
   if (TRUCKS.length >= 4) return;
-  const entry = DATA.P.mainGate;
+  const entry = RESCUE.base || DATA.P.mainGate;
   const g = new THREE.Group();
   const body = new THREE.Mesh(truckGeo, truckMat); body.castShadow = true;
   const cab = new THREE.Mesh(new THREE.BoxGeometry(2.1, 1.0, 2.2).translate(0, 2.0, -3), new THREE.MeshStandardMaterial({ color: C('#1a2630'), roughness: 0.2, metalness: 0.5 }));
@@ -101,54 +100,69 @@ function spawnTruck(targetSeg) {
   g.add(body, cab, beacon);
   g.position.set(entry[0], H(entry[0], entry[1]), entry[1]);
   scene.add(g);
-  TRUCKS.push({ g, beacon, target: targetSeg, x: entry[0], z: entry[1], ang: 0, state: 'drive', spraycd: 0, life: 70 });
+  TRUCKS.push({ g, beacon, target: targetSeg, x: entry[0], z: entry[1], ang: 0, state: 'drive', life: 90 });
 }
 function nearestFire(x, z) {
   let best = null, bd = Infinity;
-  for (const s of SEGS) if (s.fire === 1) { const d = Math.hypot(s.cx - x, s.cz - z); if (d < bd) { bd = d; best = s; } }
+  for (const s of SEGS) if (s.fire === 1) { const d = Math.hypot(s.cx - x, s.cz - z); if (d < bd) { bd = d; best = { seg: s, x: s.cx, z: s.cz, d: s.r + 8 }; } }
+  for (const i of burningTrees) { const d = Math.hypot(T.x[i] - x, T.z[i] - z) + 40; if (d < bd) { bd = d; best = { tree: i, x: T.x[i], z: T.z[i], d: 10 }; } }
   return best;
+}
+function fireTargetLive(f) { return f && (f.seg ? f.seg.fire === 1 : T.st[f.tree] === 1); }
+function douseTrees(x, z, dt) {
+  for (const j of treesNear(x, z, 22)) {
+    T.wet[j] = Math.max(T.wet[j], 6);
+    if (T.st[j] === 1 && Math.random() < dt * 3) {
+      T.st[j] = 2; burningTrees.delete(j); setTreeInst(j);
+      RESCUE.treeOut++;
+    }
+  }
 }
 function updateTrucks(dt) {
   const anyFire = burningTrees.size > 0 || SEGS.some(s => s.fire === 1);
-  if (anyFire && S.respond && TRUCKS.length < 3 && Math.random() < dt * 0.4) {
-    const f = nearestFire(DATA.P.mainGate[0], DATA.P.mainGate[1]);
+  if (anyFire && S.respond && RESCUE.arrived && TRUCKS.length < 3 && Math.random() < dt * 0.6) {
+    const f = nearestFire(RESCUE.base[0], RESCUE.base[1]);
     if (f) spawnTruck(f);
   }
   for (let i = TRUCKS.length - 1; i >= 0; i--) {
     const t = TRUCKS[i];
     t.life -= dt;
     t.beacon.material.emissiveIntensity = 1.5 + 1.5 * Math.sin(S.time * 14);
-    if (!t.target || t.target.fire !== 1) t.target = nearestFire(t.x, t.z);
-    if ((!t.target && !burningTrees.size) || t.life <= 0) {
-      scene.remove(t.g); TRUCKS.splice(i, 1); continue;
-    }
-    const tgt = t.target ? { x: t.target.cx + t.target.r + 8, z: t.target.cz } : (() => { const j = [...burningTrees][0]; return { x: T.x[j] + 10, z: T.z[j] }; })();
+    if (!fireTargetLive(t.target)) t.target = nearestFire(t.x, t.z);
+    if (!t.target || t.life <= 0) { scene.remove(t.g); TRUCKS.splice(i, 1); continue; }
+    const f = t.target;
+    const ox = t.x - f.x, oz = t.z - f.z, ol = Math.hypot(ox, oz) || 1;
+    const tgt = { x: f.x + ox / ol * f.d, z: f.z + oz / ol * f.d };
     const dx = tgt.x - t.x, dz = tgt.z - t.z, d = Math.hypot(dx, dz);
-    if (d > 12) {
+    if (d > 3) {
       const want = Math.atan2(dz, dx);
       let da = want - t.ang; while (da > Math.PI) da -= TAU; while (da < -Math.PI) da += TAU;
-      t.ang += da * damp(3, dt);
-      const spd = 16;
+      t.ang += da * damp(4, dt);
+      const spd = Math.min(d / dt, RESCUE_SPEED * EV_K);
       t.x += Math.cos(t.ang) * spd * dt; t.z += Math.sin(t.ang) * spd * dt;
       t.state = 'drive';
     } else {
       t.state = 'spray';
+      t.ang = Math.atan2(f.z - t.z, f.x - t.x);
     }
     t.g.position.set(t.x, H(t.x, t.z) + 0.1, t.z);
     t.g.rotation.y = -t.ang - Math.PI / 2;
-    if (t.state === 'spray' && t.target) {
-      const s = t.target;
-      const from = new V3(t.x + Math.cos(t.ang) * 4, H(t.x, t.z) + 3, t.z + Math.sin(t.ang) * 4);
-      for (let k = 0; k < 3; k++) {
-        const aim = new V3(s.cx - from.x, s.b.yGround + 6 - from.y, s.cz - from.z).normalize();
-        firePool.spawn({ x: from.x, y: from.y, z: from.z, vx: aim.x * 22 + rand(-2, 2), vy: aim.y * 22 + rand(4, 8), vz: aim.z * 22 + rand(-2, 2),
-          r: 0.6, g: 0.8, b: 0.95, life: 0.9, s0: 1.2, s1: 2.6, a: 0.5, grav: -20, drag: 0.4, wind: 0.2, kind: 1 });
-      }
+    if (t.state !== 'spray') continue;
+    const from = new V3(t.x + Math.cos(t.ang) * 4, H(t.x, t.z) + 3, t.z + Math.sin(t.ang) * 4);
+    const ty = f.seg ? f.seg.b.yGround + 6 : T.y[f.tree] + 5;
+    for (let k = 0; k < 3; k++) {
+      const aim = new V3(f.x - from.x, ty - from.y, f.z - from.z).normalize();
+      firePool.spawn({ x: from.x, y: from.y, z: from.z, vx: aim.x * 22 + rand(-2, 2), vy: aim.y * 22 + rand(4, 8), vz: aim.z * 22 + rand(-2, 2),
+        r: 0.6, g: 0.8, b: 0.95, life: 0.9, s0: 1.2, s1: 2.6, a: 0.5, grav: -20, drag: 0.4, wind: 0.2, kind: 1 });
+    }
+    douseTrees(f.x, f.z, dt);
+    if (f.seg) {
+      const s = f.seg;
       s.hp = Math.min(s.maxHp, s.hp + dt * 9);
       s.wet = 2;
       s.fuel -= dt * 10;
       if (Math.random() < dt * 8) emitSmoke(s.cx + rand(-3, 3), s.b.yGround + 4, s.cz + rand(-3, 3), 0, 3, 0, 5, 0.7, 0.7, 0.72, 2, 0.4);
-      if (s.fuel <= 0 || s.hp > s.maxHp * 0.6) { s.fire = 0; s.fuel = 0; refreshSeg(s); logEvent(`${s.b.name} 화재 진압`, 'ok', s.b.name); t.target = null; }
+      if (s.fuel <= 0 || s.hp > s.maxHp * 0.6) { s.fire = 0; s.fuel = 0; refreshSeg(s); RESCUE.fireOut++; logEvent(`소방차 · ${s.b.name} 화재 진압`, 'ok', s.b.name); t.target = null; }
     }
   }
 }

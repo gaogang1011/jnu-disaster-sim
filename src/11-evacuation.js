@@ -358,6 +358,7 @@ function evacBegin(id) {
   reroute();
   const kindName = SHELTER_KIND_NAME[d.shelter];
   logEvent(`대피 시작 · 목적지 ${kindName}, 대피소 ${usable.length}곳`, 'warn');
+  callRescue();
   if (typeof onEvacChange === 'function') onEvacChange();
 }
 
@@ -388,7 +389,7 @@ function evacMetrics() {
   }
   return {
     total: EVAC.n, done, moving, stuck, wait, exposed, ever, stuckAvg: ever ? stuckSum / ever * EV_K : 0,
-    carried, rescued, rescueAvg: rescued ? rescueSum / rescued * EV_K : 0,
+    carried, rescued, rescueAvg: rescued ? rescueSum / rescued * EV_K : 0, fireOut: RESCUE.fireOut, treeOut: RESCUE.treeOut, checks: RESCUE.checks,
     pct: EVAC.n ? done / EVAC.n * 100 : 0, avg: done ? sum / done : 0, max, elapsed: (S.time - start) * EV_K
   };
 }

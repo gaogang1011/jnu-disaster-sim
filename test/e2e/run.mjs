@@ -134,7 +134,7 @@ const rs = await page.evaluate(() => {
   camRelease();
   s.controls.target.set(cam.x, cam.y, cam.z);
   s.camera.position.set(cam.x + 160, cam.y + 170, cam.z - 220);
-  return { t: Math.round((s.S.time - t0) * 10), ever: m.ever, rescued: m.rescued, carried: m.carried, wait: Math.round(m.rescueAvg), arrived: s.RESCUE.arrived, log: s.LOG.some(l => l.msg.includes('119 구조 요청')) };
+  return { t: Math.round((s.S.time - t0) * 10), ever: m.ever, rescued: m.rescued, carried: m.carried, wait: Math.round(m.rescueAvg), arrived: s.RESCUE.arrived, log: s.LOG.some(l => l.msg.includes('119 신고 접수')) };
 });
 check('고립자 기록과 구조대 구조', rs.log && rs.arrived && rs.ever > 0 && rs.rescued > 0, `고립 경험 ${rs.ever}명, 구조 ${rs.rescued}명, 평균 구조 대기 ${rs.wait}초 (재난 후 ${Math.round(rs.t / 60)}분)`);
 await page.waitForTimeout(1500);
